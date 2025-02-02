@@ -2,8 +2,7 @@ package com.example.tangible_recognition_v1
 
 import android.content.Context
 import android.graphics.PointF
-import android.os.Handler
-import android.os.Looper
+import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.MotionEvent
@@ -12,30 +11,36 @@ import kotlin.math.hypot
 
 class TouchProcessor(
     context: Context,
-    private val maxTouchPoints: Int,
-    private val minSpacing: Float
+    private val maxTouchPoints: Int, // Maximum number of touch points
+    minSpacingMm: Float, // Minimum spacing between touch points in millimeters
+    thresholdMm: Float, // Minimum movement in millimeters to update touch point
+    restoreThresholdMm: Float, // Maximum movement in millimeters to restore lost touches
+    private val logIntervalMs: Int, // Minimum time between logs per touch ID
+    private val restoreGracePeriodMs: Int // Grace period for restoring touches
 ) {
 
     ////////////////// Private properties ///////////////////////////////////////////////////
 
     private val touchPoints = mutableMapOf<Int, PointF>() // Stores current touch points
-    private val lastPositions =
-        mutableMapOf<Int, MutableList<PointF>>() // Stores last positions for smoothing
-    private val lostTouches = mutableMapOf<Int, PointF>() // Stores temporarily lost touches
-
-    private val threshold = 5 // Minimum movement in pixels (adjust to match ~5mm)
-    private val smoothingWindow = 3 // Number of positions to average
+    private val lostTouches =
+        mutableMapOf<Int, Pair<PointF, Long>>() // Stores lost touches with timestamps
+    private val lastLogTimes = mutableMapOf<Int, Long>() // Stores last log times per touch ID
 
     private val displayMetrics: DisplayMetrics = context.resources.displayMetrics
-    private val ppi: Float = displayMetrics.xdpi // Pixels per inch
+    private val ppi: Int = displayMetrics.densityDpi // Pixels per inch
 
-    private val handler = Handler(Looper.getMainLooper())
-    private val touchTimeoutMs = 200L // Grace period in milliseconds
+    private val minSpacing: Float = mmToPixels(minSpacingMm)
+    private val threshold: Float = mmToPixels(thresholdMm)
+    private val restoreThreshold: Float = mmToPixels(restoreThresholdMm)
+
+    private var lastLoggedMessage: String? = null
 
     ////////////////// Public methods ///////////////////////////////////////////////////////
 
     /** Processes touch events and returns the updated touch points */
     fun processTouch(event: MotionEvent) {
+        val currentTime = SystemClock.uptimeMillis()
+
         // Process touch events
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_MOVE -> {
@@ -44,52 +49,48 @@ class TouchProcessor(
                     val x = event.getX(i)
                     val y = event.getY(i)
                     val newPoint = PointF(x, y)
-                    val size = event.getSize(i)
-                    val sizeInMm = sizeToMm(size)
+
+                    // Restore lost touch if within grace period and distance threshold
+                    val lostTouch = lostTouches[pointerId]
+                    if (lostTouch != null && currentTime - lostTouch.second <= restoreGracePeriodMs
+                        && !isSignificantChange(lostTouch.first, newPoint, restoreThreshold)
+                    ) {
+                        touchPoints[pointerId] = lostTouch.first // Restore only if close
+                        lostTouches.remove(pointerId) // Remove from lostTouches
+                        continue // Skip further processing
+                    }
 
                     // Enforce the maximum touch points constraint
                     if (touchPoints.size < maxTouchPoints || touchPoints.containsKey(pointerId)) {
-                        // Recover lost touch
-                        val lastPoint = touchPoints[pointerId] ?: lostTouches.remove(pointerId)
+                        val lastPoint = touchPoints[pointerId]
 
-                        if (lastPoint == null || isSignificantChange(lastPoint, newPoint)) {
-                            val smoothedPoint = smoothPosition(pointerId, newPoint)
-
-                            // Apply minimum spacing filter to separate touches
-                            if (isWellSpaced(smoothedPoint)) {
-                                touchPoints[pointerId] = smoothedPoint
-
-                                Log.d(
-                                    "TouchView",
-                                    "Valid Touch - Pointer ID: $pointerId," +
-                                            " X: ${smoothedPoint.x}, Y: ${smoothedPoint.y},"
-                                            + "Size: $size, Size in mm: $sizeInMm"
-                                )
-                            }
+                        if (lastPoint == null || isSignificantChange(
+                                lastPoint,
+                                newPoint,
+                                threshold
+                            ) && isWellSpaced(newPoint)
+                        ) {
+                            touchPoints[pointerId] = newPoint
+                            logTouchPoint(pointerId, newPoint)
                         }
                     }
                 }
+                logConcurrentTouchPoints()
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 val pointerId = event.getPointerId(event.actionIndex)
-                val lastTouch = touchPoints[pointerId]
-
-                if (lastTouch != null) {
-                    // Save the touch temporarily instead of removing it immediately
-                    lostTouches[pointerId] = lastTouch
-
-                    // Schedule touch removal after grace period
-                    handler.postDelayed({
-                        if (lostTouches.containsKey(pointerId)) {
-                            lostTouches.remove(pointerId) // Finally remove if it hasn't returned
-                            touchPoints.remove(pointerId)
-                            lastPositions.remove(pointerId) // Clear history
-                        }
-                    }, touchTimeoutMs)
+                touchPoints[pointerId]?.let { lastTouch ->
+                    lostTouches[pointerId] = Pair(lastTouch, currentTime)
+                    touchPoints.remove(pointerId)
+                    logTouchPoint(pointerId, lastTouch, removed = true)
                 }
+                logConcurrentTouchPoints()
             }
         }
+
+        // Remove lost touches that exceed the grace period
+        lostTouches.entries.removeIf { currentTime - it.value.second > restoreGracePeriodMs }
     }
 
     /** Returns the current touch points map */
@@ -97,25 +98,49 @@ class TouchProcessor(
 
     ////////////////// Private methods /////////////////////////////////////////////////
 
+    /** Logs the touch point, but only if at least 200ms has passed since the last log */
+    private fun logTouchPoint(
+        pointerId: Int,
+        point: PointF,
+        removed: Boolean = false
+    ) {
+        if (!removed) {
+            val currentTime = SystemClock.uptimeMillis()
+            val lastLogTime = lastLogTimes[pointerId] ?: 0
+
+            if (currentTime - lastLogTime >= logIntervalMs) {
+                Log.d(
+                    "TouchProcessor - ADDED", "New Touch! --- ID: $pointerId " +
+                            "at X: ${point.x}, Y: ${point.y}"
+                )
+                lastLogTimes[pointerId] = currentTime // Update log time
+            }
+        } else {
+            Log.d(
+                "TouchProcessor - REMOVED",
+                "Touch removed! --- ID: $pointerId at X: ${point.x}, Y: ${point.y}"
+            )
+        }
+    }
+
+    /** Logs the number of concurrent touch points */
+    private fun logConcurrentTouchPoints() {
+        val currentMessage = "Concurrent touch points: ${touchPoints.size}"
+        if (currentMessage != lastLoggedMessage) {
+            Log.d("TouchProcessor - CURRENT", currentMessage)
+            lastLoggedMessage = currentMessage
+        }
+    }
+
     /** Ensures movement is significant before updating a touch point */
-    private fun isSignificantChange(lastPoint: PointF, newPoint: PointF): Boolean {
+    private fun isSignificantChange(
+        lastPoint: PointF,
+        newPoint: PointF,
+        threshold: Float
+    ): Boolean {
         val dx = abs(newPoint.x - lastPoint.x)
         val dy = abs(newPoint.y - lastPoint.y)
         return dx > threshold || dy > threshold
-    }
-
-    /** Smooths movement by averaging last few positions */
-    private fun smoothPosition(pointerId: Int, newPoint: PointF): PointF {
-        val history = lastPositions.getOrPut(pointerId) { mutableListOf() }
-
-        history.add(newPoint)
-        if (history.size > smoothingWindow) {
-            history.removeAt(0)
-        }
-
-        val avgX = history.sumOf { it.x.toDouble() } / history.size
-        val avgY = history.sumOf { it.y.toDouble() } / history.size
-        return PointF(avgX.toFloat(), avgY.toFloat())
     }
 
     /** Ensures touch points are spaced at least minSpacing pixels apart */
@@ -132,9 +157,9 @@ class TouchProcessor(
         return true
     }
 
-    /** Converts touch size to millimeters */
-    private fun sizeToMm(size: Float): Float {
-        val sizeInInches = size * displayMetrics.widthPixels / ppi
-        return sizeInInches * 25.4f // Convert inches to millimeters
+    /** Converts millimeters to pixels */
+    private fun mmToPixels(mm: Float): Float {
+        val inches = mm / 25.4f
+        return inches * ppi
     }
 }
