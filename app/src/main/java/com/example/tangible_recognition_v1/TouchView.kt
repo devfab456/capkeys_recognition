@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.PointF
 import android.view.MotionEvent
 import android.view.View
 import kotlin.random.Random
@@ -52,9 +53,31 @@ class TouchView(context: Context) : View(context) {
             paint.color = touchColors[pointerId] ?: Color.RED
             canvas.drawCircle(point.x, point.y, 100f, paint)
             paint.color = Color.BLACK
-            canvas.drawText("ID: $pointerId", point.x - 300, point.y - 300, paint)
+            canvas.drawText("ID: $pointerId", point.x - 270, point.y - 270, paint)
         }
     }
+
+    ////////////////// Public methods ///////////////////////////////////////////////////////
+
+    fun getCurrentPatterns(): MutableList<Pair<Int, List<PointF>>> {
+        return touchProcessor.getCurrentPatterns()
+    }
+
+    fun saveNewPattern() {
+        touchProcessor.saveNewPattern()
+    }
+
+    fun saveAllPatternsToFile(context: Context) {
+        touchProcessor.saveAllPatternsToFile(context)
+    }
+
+    fun loadPatterns(context: Context) {
+        touchProcessor.loadPatterns(context)
+    }
+
+//    fun checkCurrentPattern(): Boolean {
+//        return touchProcessor.checkCurrentPattern()
+//    }
 
     ////////////////// Private methods //////////////////////////////////////////////////////
 

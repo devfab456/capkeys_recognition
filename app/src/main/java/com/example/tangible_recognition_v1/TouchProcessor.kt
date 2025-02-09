@@ -35,9 +35,21 @@ class TouchProcessor(
 
     private var lastLoggedMessage: String? = null
 
+    private val patternRecognizer = PatternRecognizer(this)
+    var isRecording = false
+
+
     ////////////////// Public methods ///////////////////////////////////////////////////////
 
-    /** Processes touch events and returns the updated touch points */
+    /**
+     * Processes touch events and returns the updated touch points.
+     *
+     * This method handles different types of touch events such as ACTION_DOWN, ACTION_POINTER_DOWN,
+     * ACTION_MOVE, ACTION_UP, and ACTION_POINTER_UP. It updates the touch points based on the event
+     * and logs the touch points if necessary.
+     *
+     * @param event The MotionEvent containing touch event data.
+     */
     fun processTouch(event: MotionEvent) {
         val currentTime = SystemClock.uptimeMillis()
 
@@ -70,6 +82,9 @@ class TouchProcessor(
                                 threshold
                             ) && isWellSpaced(newPoint)
                         ) {
+                            if (isRecording) {
+                                patternRecognizer.addTouchPoint(newPoint, currentTime)
+                            }
                             touchPoints[pointerId] = newPoint
                             logTouchPoint(pointerId, newPoint)
                         }
@@ -96,9 +111,39 @@ class TouchProcessor(
     /** Returns the current touch points map */
     fun getTouchPoints(): Map<Int, PointF> = touchPoints
 
+
+    ////////////////// Public pattern recognition methods /////////////////////////////////
+
+    fun saveNewPattern() {
+        // todo ok button
+        isRecording = true
+    }
+
+    fun getCurrentPatterns(): MutableList<Pair<Int, List<PointF>>> {
+        return patternRecognizer.getCurrentPatterns()
+    }
+
+    fun saveAllPatternsToFile(context: Context) {
+        patternRecognizer.savePatternsToFile(context)
+    }
+
+    fun loadPatterns(context: Context) {
+        patternRecognizer.loadPatternsFromFile(context)
+    }
+
+//    fun checkCurrentPattern(): Boolean {
+//        return patternRecognizer.checkCurrentPattern()
+//    }
+
     ////////////////// Private methods /////////////////////////////////////////////////
 
-    /** Logs the touch point, but only if at least 200ms has passed since the last log */
+    /**
+     * Logs the touch point, but only if at least the specified log interval has passed since the last log.
+     *
+     * @param pointerId The ID of the touch pointer.
+     * @param point The coordinates of the touch point.
+     * @param removed Indicates whether the touch point was removed. Defaults to false.
+     */
     private fun logTouchPoint(
         pointerId: Int,
         point: PointF,
@@ -132,7 +177,14 @@ class TouchProcessor(
         }
     }
 
-    /** Ensures movement is significant before updating a touch point */
+    /**
+     * Ensures movement is significant before updating a touch point
+     *
+     * @param lastPoint The last touch point
+     * @param newPoint The new touch point
+     * @param threshold The movement threshold in pixels
+     * @return True if the movement is significant, false otherwise
+     */
     private fun isSignificantChange(
         lastPoint: PointF,
         newPoint: PointF,
@@ -143,7 +195,12 @@ class TouchProcessor(
         return dx > threshold || dy > threshold
     }
 
-    /** Ensures touch points are spaced at least minSpacing pixels apart */
+    /**
+     * Checks if the new touch point is well spaced from existing touch points.
+     *
+     * @param newPoint The new touch point to be checked.
+     * @return True if the new point is well spaced from existing points, false otherwise.
+     */
     private fun isWellSpaced(newPoint: PointF): Boolean {
         for (existingPoint in touchPoints.values) {
             val distance = hypot(
