@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Button
 import android.widget.LinearLayout
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
@@ -18,6 +19,10 @@ class MainActivity : AppCompatActivity() {
 
         // Load saved patterns
         touchView.loadPatterns(this)
+        // Load saved ID counter on startup todo check if id is the same before saving to file
+        touchView.loadPatternIdCounter(this)
+
+//        touchView.deletePatternFromFile(this, 2)
 
 
         /////////////////////////// Add buttons to the layout ///////////////////////////
@@ -25,7 +30,7 @@ class MainActivity : AppCompatActivity() {
         val saveNewPatternButton = Button(this).apply {
             text = "Save New Pattern"
             setOnClickListener {
-                Log.d("MainActivity", "Save New Pattern button clicked")
+                Log.d("MainActivity", "Saving new pattern...")
                 touchView.saveNewPattern()
             }
         }
@@ -40,35 +45,36 @@ class MainActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
 
-                // Log current patterns before saving
+                // Log current patterns
+                Log.d("MainActivity", "Review the following patterns before saving:")
                 currentPatterns.forEach { (id, pattern) ->
                     Log.d("MainActivity", "Pattern ID: $id - Points: $pattern")
                 }
 
-                // Save patterns permanently
-                touchView.saveAllPatternsToFile(this@MainActivity)
-
-                Log.d("MainActivity", "Patterns saved permanently!")
+                // Show confirmation dialog
+                AlertDialog.Builder(context)
+                    .setTitle("Confirm Save")
+                    .setMessage("Do you want to permanently save these patterns?\nCheck the log for details.")
+                    .setPositiveButton("Yes") { _, _ ->
+                        // Save patterns permanently
+                        touchView.saveAllPatternsToFile(this@MainActivity)
+                        Log.d("MainActivity", "Patterns saved permanently!")
+                    }
+                    .setNegativeButton("No") { _, _ ->
+                        Log.d("MainActivity", "Pattern save canceled by user.")
+                    }
+                    .show()
             }
         }
 
-//        val checkPatternButton = Button(this).apply {
-//            text = "Check Pattern"
-//            setOnClickListener {
-//                val isMatch = touchView.checkCurrentPattern()
-//
-//                if (isMatch) {
-//                    Toast.makeText(
-//                        this@MainActivity,
-//                        "Pattern matches a saved one!",
-//                        Toast.LENGTH_SHORT
-//                    ).show()
-//                } else {
-//                    Toast.makeText(this@MainActivity, "Pattern NOT recognized!", Toast.LENGTH_SHORT)
-//                        .show()
-//                }
-//            }
-//        }
+        val checkPatternButton = Button(this).apply {
+            text = "Check Pattern"
+            setOnClickListener {
+                Log.d("MainActivity", "Checking pattern...")
+                //todo load the patterns again as they may have changed
+                touchView.checkPattern()
+            }
+        }
 
 
         /////////////////////////// Create the layout ///////////////////////////
@@ -97,18 +103,20 @@ class MainActivity : AppCompatActivity() {
             )
 
             addView(
-                saveAllPatternsToFileButton, LinearLayout.LayoutParams(
+                saveAllPatternsToFileButton,
+                LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 )
             )
 
-//            addView(
-//                checkPatternButton, LinearLayout.LayoutParams(
-//                    LinearLayout.LayoutParams.MATCH_PARENT,
-//                    LinearLayout.LayoutParams.WRAP_CONTENT
-//                )
-//            )
+            addView(
+                checkPatternButton,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
         }
 
         // Set the LinearLayout as the content view

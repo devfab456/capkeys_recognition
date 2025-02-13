@@ -27,7 +27,7 @@ class TouchProcessor(
     private val lastLogTimes = mutableMapOf<Int, Long>() // Stores last log times per touch ID
 
     private val displayMetrics: DisplayMetrics = context.resources.displayMetrics
-    private val ppi: Int = displayMetrics.densityDpi // Pixels per inch
+    private val ppi: Float = displayMetrics.xdpi // Pixels per inch
 
     private val minSpacing: Float = mmToPixels(minSpacingMm)
     private val threshold: Float = mmToPixels(thresholdMm)
@@ -35,8 +35,9 @@ class TouchProcessor(
 
     private var lastLoggedMessage: String? = null
 
-    private val patternRecognizer = PatternRecognizer(this)
+    private val patternRecognizer = PatternRecognizer(this, mmToPixels(10f) /*todo adjust*/)
     var isRecording = false
+    var isChecking = false
 
 
     ////////////////// Public methods ///////////////////////////////////////////////////////
@@ -50,7 +51,7 @@ class TouchProcessor(
      *
      * @param event The MotionEvent containing touch event data.
      */
-    fun processTouch(event: MotionEvent) {
+    fun processTouch(event: MotionEvent, context: Context) {
         val currentTime = SystemClock.uptimeMillis()
 
         // Process touch events
@@ -82,8 +83,8 @@ class TouchProcessor(
                                 threshold
                             ) && isWellSpaced(newPoint)
                         ) {
-                            if (isRecording) {
-                                patternRecognizer.addTouchPoint(newPoint, currentTime)
+                            if (isRecording || isChecking) {
+                                patternRecognizer.addTouchPoint(context, newPoint, currentTime)
                             }
                             touchPoints[pointerId] = newPoint
                             logTouchPoint(pointerId, newPoint)
@@ -111,15 +112,17 @@ class TouchProcessor(
     /** Returns the current touch points map */
     fun getTouchPoints(): Map<Int, PointF> = touchPoints
 
+    fun loadPatternIdCounter(context: Context) {
+        patternRecognizer.loadPatternIdCounter(context)
+    }
 
     ////////////////// Public pattern recognition methods /////////////////////////////////
 
     fun saveNewPattern() {
-        // todo ok button
         isRecording = true
     }
 
-    fun getCurrentPatterns(): MutableList<Pair<Int, List<PointF>>> {
+    fun getCurrentPatterns(): MutableList<PatternData> {
         return patternRecognizer.getCurrentPatterns()
     }
 
@@ -131,9 +134,13 @@ class TouchProcessor(
         patternRecognizer.loadPatternsFromFile(context)
     }
 
-//    fun checkCurrentPattern(): Boolean {
-//        return patternRecognizer.checkCurrentPattern()
-//    }
+    fun deletePatternFromFile(context: Context, patternId: Int) {
+        patternRecognizer.deletePatternFromFile(context, patternId)
+    }
+
+    fun checkPattern() {
+        isChecking = true
+    }
 
     ////////////////// Private methods /////////////////////////////////////////////////
 

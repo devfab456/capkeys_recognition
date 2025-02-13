@@ -7,11 +7,11 @@ import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
 import java.io.File
+import kotlin.math.hypot
 
 class PatternRecognizer(
     private val touchProcessor: TouchProcessor,
-//    private val maxPatternTimeMs: Int = 5000, private val maxDistanceBetweenTouchPoints: Int =
-//        50, private val maxTimeBetweenTouchesMs: Long = 700L
+    private val positionTolerance: Float // Tolerance for matching pattern points
 ) {
 
     ////////////////// Private properties /////////////////////////////////////////////////
@@ -21,34 +21,63 @@ class PatternRecognizer(
 
     // Define known patterns using relative coordinates
     private val knownPatterns = mutableListOf<PatternData>()
-    private val currentPatterns = mutableListOf<Pair<Int, List<PointF>>>()
-    private var patternIdCounter = 1 // Start with ID 1
+    private val currentPatterns = mutableListOf<PatternData>()
+    private var patternIdCounter = 1 // Start with ID 1, gets overwritten on load
+
+    //    private val maxPatternTimeMs: Int = 5000
+    //    private val maxTimeBetweenTouchesMs: Long = 700L
 
 
     ///////////////// Public methods ///////////////////////////////////////////////////////
 
-    fun addTouchPoint(point: PointF, timestamp: Long) {
+    fun addTouchPoint(context: Context, point: PointF, timestamp: Long) {
         Log.d("PatternRecognizer", "Touch point added to sequence: $point")
         touchSequence.add(point)
         sequenceTimestamps.add(timestamp)
 
-        if (touchSequence.size == 5) { // Example max size limit
-            Log.d("PatternRecognizer", "Touch sequence starting to save after 5 points.")
-            saveNewPattern()
+        // todo max size limit
+        if (touchSequence.size >= 5) {
+            Log.d("PatternRecognizer", "Touch sequence ending after 5 points.")
+            if (touchProcessor.isChecking) {
+                checkPattern()
+            } else if (touchProcessor.isRecording) {
+                saveNewPattern(context)
+            }
         }
     }
 
-    fun getCurrentPatterns(): MutableList<Pair<Int, List<PointF>>> {
+    fun getCurrentPatterns(): MutableList<PatternData> {
         return currentPatterns
     }
 
     fun savePatternsToFile(context: Context) {
-        // todo add patterns instead of overwriting
         val file = File(context.filesDir, "patterns.json")
-        val json = Gson().toJson(currentPatterns)
-        Log.d("PatternRecognizer", "Saving patterns: $json")
+
+        // Load existing patterns if the file exists
+        val existingPatterns: MutableList<PatternData> = if (file.exists()) {
+            try {
+                val json = file.readText()
+                val type = object : TypeToken<List<PatternData>>() {}.type
+                Gson().fromJson(json, type) ?: mutableListOf()
+            } catch (e: Exception) {
+                Log.e("PatternRecognizer", "Error reading existing patterns: ${e.message}")
+                mutableListOf()
+            }
+        } else {
+            mutableListOf()
+        }
+
+        // Convert currentPatterns (Pair<Int, List<PointF>>) to PatternData
+        val newPatterns = currentPatterns.map { (id, points) -> PatternData(id, points) }
+
+        // Add new patterns to the existing list
+        existingPatterns.addAll(newPatterns)
+
+        // Save the updated list back to file
+        val json = Gson().toJson(existingPatterns)
         file.writeText(json)
-        Log.d("PatternRecognizer", "Patterns saved to file.")
+
+        Log.d("PatternRecognizer", "Patterns saved: $json")
     }
 
     fun loadPatternsFromFile(context: Context) {
@@ -57,42 +86,72 @@ class PatternRecognizer(
             val json = file.readText()
             try {
                 val gson = Gson()
-                val type = object : TypeToken<List<Map<String, Any>>>() {}.type
-                val parsedData = gson.fromJson<List<Map<String, Any>>>(json, type)
+                val type = object : TypeToken<List<PatternData>>() {}.type
+                val parsedData: List<PatternData> = gson.fromJson(json, type) ?: emptyList()
 
-                knownPatterns.clear() // Clear existing patterns before loading
-                for (item in parsedData) {
-                    val id = (item["first"] as? Double)?.toInt() ?: continue
-                    val pointsJson = item["second"]
-                    val pointsType = object : TypeToken<List<PointF>>() {}.type
-                    val points: List<PointF> = gson.fromJson(gson.toJson(pointsJson), pointsType)
+                knownPatterns.clear()
+                knownPatterns.addAll(parsedData)
 
-                    knownPatterns.add(PatternData(id, points)) // Store ID + Points
+                if (knownPatterns.isEmpty()) {
+                    Log.d("PatternRecognizer", "No patterns loaded. File is empty.")
+                } else {
+                    Log.d(
+                        "PatternRecognizer",
+                        "Patterns loaded successfully: ${knownPatterns.map { it.id }}"
+                    )
+//                    Log.d("PatternRecognizer", "Patterns loaded: $knownPatterns")
                 }
-
-                Log.d("PatternRecognizer", "Patterns loaded successfully.")
             } catch (e: JsonSyntaxException) {
                 Log.e("PatternRecognizer", "Invalid JSON format: ${e.message}")
             }
-            Log.d("PatternRecognizer", "Loaded patterns: $knownPatterns")
         }
     }
 
-//    fun checkCurrentPattern(): Boolean {
-//        val currentPattern = normalizeSequence() // Normalize the current detected pattern
-//
-//        Log.d("PatternRecognizer", "Detected Pattern: $currentPattern")
-//
-//        for ((id, savedPattern) in knownPatterns) {
-//            if (arePatternsSimilar(savedPattern, currentPattern)) {
-//                Log.d("PatternRecognizer", "Recognized Pattern ID: $id - Points: $savedPattern")
-//                return true
-//            }
-//        }
-//
-//        Log.d("PatternRecognizer", "Pattern NOT recognized!")
-//        return false
-//    }
+    fun loadPatternIdCounter(context: Context) {
+        val sharedPreferences = context.getSharedPreferences("PatternPrefs", Context.MODE_PRIVATE)
+        patternIdCounter =
+            sharedPreferences.getInt("patternIdCounter", 1) // Default to 1 if not found
+    }
+
+    fun deletePatternFromFile(context: Context, patternId: Int) {
+        val file = File(context.filesDir, "patterns.json")
+
+        if (!file.exists()) {
+            Log.d("PatternRecognizer", "No file found. Nothing to delete.")
+            return
+        }
+
+        try {
+            val json = file.readText()
+            val gson = Gson()
+            val type = object : TypeToken<List<PatternData>>() {}.type
+            val patterns: MutableList<PatternData> = gson.fromJson(json, type) ?: mutableListOf()
+
+            Log.d("PatternRecognizer", "Existing IDs before deletion: ${patterns.map { it.id }}")
+
+            val originalSize = patterns.size
+            patterns.removeAll { it.id == patternId }
+
+            if (patterns.size == originalSize) {
+                Log.d(
+                    "PatternRecognizer",
+                    "Pattern ID $patternId not found. Available IDs: ${patterns.map { it.id }}"
+                )
+                return
+            }
+
+            // Save the updated list back to the file using PatternData directly
+            val updatedJson = gson.toJson(patterns)
+            file.writeText(updatedJson)
+
+            Log.d(
+                "PatternRecognizer",
+                "Deleted pattern with ID $patternId. File updated. Remaining IDs: ${patterns.map { it.id }}"
+            )
+        } catch (e: Exception) {
+            Log.e("PatternRecognizer", "Error deleting pattern: ${e.message}")
+        }
+    }
 
     ///////////////// Private methods /////////////////////////////////////////////////
 
@@ -101,9 +160,18 @@ class PatternRecognizer(
         sequenceTimestamps.clear()
     }
 
-    private fun saveNewPattern() {
+    // todo maybe distance between single points?
+    private fun normalizeSequence(): List<PointF> {
+        if (touchSequence.isEmpty()) return emptyList()
+
+        val firstPoint = touchSequence.first()
+        return touchSequence.map { PointF(it.x - firstPoint.x, it.y - firstPoint.y) }
+    }
+
+    private fun saveNewPattern(context: Context) {
         val normalized = normalizeSequence()
-        currentPatterns.add(Pair(patternIdCounter++, normalized))
+        currentPatterns.add(PatternData(patternIdCounter++, normalized))
+        savePatternIdCounter(context)
         Log.d(
             "PatternRecognizer",
             "New pattern saved with ID ${patternIdCounter - 1} and Points: $normalized"
@@ -114,20 +182,68 @@ class PatternRecognizer(
         Log.d("PatternRecognizer", "Current patterns: $currentPatterns")
     }
 
-    private fun normalizeSequence(): List<PointF> {
-        if (touchSequence.isEmpty()) return emptyList()
-
-        val firstPoint = touchSequence.first()
-        return touchSequence.map { PointF(it.x - firstPoint.x, it.y - firstPoint.y) }
+    private fun savePatternIdCounter(context: Context) {
+        val sharedPreferences = context.getSharedPreferences("PatternPrefs", Context.MODE_PRIVATE)
+        sharedPreferences.edit().putInt("patternIdCounter", patternIdCounter).apply()
     }
 
-//    private fun arePatternsSimilar(pattern1: List<PointF>, pattern2: List<PointF>): Boolean {
-//        if (pattern1.size != pattern2.size) return false
-//
-//        return pattern1.zip(pattern2).all { (p1, p2) ->
-//            abs(p1.x - p2.x) < 10 && abs(p1.y - p2.y) < maxDistanceBetweenTouchPoints // Adjust sensitivity
-//        }
-//    }
+    private fun checkPattern() {
+        val normalized = normalizeSequence()
+
+        Log.d("PatternRecognizer", "Detected Pattern: $normalized")
+        resetSequence()
+        touchProcessor.isChecking = false
+
+        for (pattern in knownPatterns) {
+            if (arePatternsEqual(pattern, normalized)) {
+                Log.d(
+                    "PatternRecognizer",
+                    "Recognized Pattern ID: ${pattern.id} - Points: ${pattern.points}}"
+                )
+                return
+            }
+        }
+
+        Log.d("PatternRecognizer", "Pattern NOT recognized!")
+    }
+
+    private fun arePatternsEqual(
+        savedPattern: PatternData,
+        patternToBeChecked: List<PointF>
+    ): Boolean {
+        if (savedPattern.points.size != patternToBeChecked.size) {
+            Log.d(
+                "PatternRecognizer",
+                "Pattern size mismatch: ${savedPattern.points.size} vs ${patternToBeChecked.size}"
+            )
+            return false
+        }
+
+        // todo more sophisticated comparison - distinguish between different patterns/gestures/rotations
+        for (i in savedPattern.points.indices) {
+            val p1 = savedPattern.points[i]
+            val p2 = patternToBeChecked[i]
+
+            val distance = hypot((p1.x - p2.x).toDouble(), (p1.y - p2.y).toDouble()).toFloat()
+
+            if (distance > positionTolerance) {
+                Log.d(
+                    "PatternRecognizer",
+                    "Pattern mismatch in Pattern ${savedPattern.id} at Index $i: Distance $distance exceeds tolerance $positionTolerance"
+                )
+                return false
+            }
+
+            if (i != savedPattern.points.indices.first) {
+                Log.d(
+                    "PatternRecognizer",
+                    "Pattern match in Pattern ${savedPattern.id} under the given Tolerance $distance"
+                )
+            }
+        }
+
+        return true
+    }
 
 //    private fun isPatternTooSlow(): Boolean {
 //        if (sequenceTimestamps.size < 2) return false

@@ -5,7 +5,6 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.PointF
 import android.view.MotionEvent
 import android.view.View
 import kotlin.random.Random
@@ -32,7 +31,7 @@ class TouchView(context: Context) : View(context) {
     /** Processes touch events and assigns a random color to each touch point */
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        touchProcessor.processTouch(event) // Process touch events
+        touchProcessor.processTouch(event, context) // Process touch events
 
         // Assign a random color to each new touch point
         for (i in 0 until event.pointerCount) {
@@ -59,7 +58,7 @@ class TouchView(context: Context) : View(context) {
 
     ////////////////// Public methods ///////////////////////////////////////////////////////
 
-    fun getCurrentPatterns(): MutableList<Pair<Int, List<PointF>>> {
+    fun getCurrentPatterns(): MutableList<PatternData> {
         return touchProcessor.getCurrentPatterns()
     }
 
@@ -75,9 +74,17 @@ class TouchView(context: Context) : View(context) {
         touchProcessor.loadPatterns(context)
     }
 
-//    fun checkCurrentPattern(): Boolean {
-//        return touchProcessor.checkCurrentPattern()
-//    }
+    fun loadPatternIdCounter(context: Context) {
+        touchProcessor.loadPatternIdCounter(context)
+    }
+
+    fun deletePatternFromFile(context: Context, patternId: Int) {
+        touchProcessor.deletePatternFromFile(context, patternId)
+    }
+
+    fun checkPattern() {
+        touchProcessor.checkPattern()
+    }
 
     ////////////////// Private methods //////////////////////////////////////////////////////
 
