@@ -5,11 +5,30 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import kotlin.random.Random
 
-class TouchView(context: Context) : View(context) {
+class TouchView : View {
+
+    // Reference to the touch processor
+    private lateinit var touchProcessor: TouchProcessor
+
+    // Constructor used when creating the view programmatically
+    constructor(context: Context, touchProcessor: TouchProcessor) : super(context) {
+        this.touchProcessor = touchProcessor
+    }
+
+    // Constructor required for XML instantiation
+    constructor(context: Context, attrs: AttributeSet?) : super(context, attrs)
+
+    // Constructor required for XML instantiation with a style
+    constructor(context: Context, attrs: AttributeSet?, defStyleAttr: Int) : super(
+        context,
+        attrs,
+        defStyleAttr
+    )
 
     ////////////////// Private properties ///////////////////////////////////////////////////
 
@@ -19,12 +38,6 @@ class TouchView(context: Context) : View(context) {
         textSize = 50f
     }
     private val touchColors = mutableMapOf<Int, Int>()
-
-    /** Touch processor for handling touch events */
-    private val touchProcessor = TouchProcessor(
-        context, maxTouchPoints = 5, minSpacingMm = 5.1f,
-        thresholdMm = 4.9f, restoreThresholdMm = 1f, 200, 100
-    )
 
     ////////////////// Overwritten methods ///////////////////////////////////////////////////////
 
@@ -52,40 +65,15 @@ class TouchView(context: Context) : View(context) {
             paint.color = touchColors[pointerId] ?: Color.RED
             canvas.drawCircle(point.x, point.y, 100f, paint)
             paint.color = Color.BLACK
-            canvas.drawText("ID: $pointerId", point.x - 270, point.y - 270, paint)
+            canvas.drawText("ID: $pointerId", point.x, point.y - 350, paint)
         }
     }
 
     ////////////////// Public methods ///////////////////////////////////////////////////////
 
-    fun getCurrentPatterns(): MutableList<PatternData> {
-        return touchProcessor.getCurrentPatterns()
-    }
-
     fun saveNewPattern() {
         touchProcessor.saveNewPattern()
     }
-
-    fun saveAllPatternsToFile(context: Context) {
-        touchProcessor.saveAllPatternsToFile(context)
-    }
-
-    fun loadPatterns(context: Context) {
-        touchProcessor.loadPatterns(context)
-    }
-
-    fun loadPatternIdCounter(context: Context) {
-        touchProcessor.loadPatternIdCounter(context)
-    }
-
-    fun deletePatternFromFile(context: Context, patternId: Int) {
-        touchProcessor.deletePatternFromFile(context, patternId)
-    }
-
-    fun checkPattern() {
-        touchProcessor.checkPattern()
-    }
-
     ////////////////// Private methods //////////////////////////////////////////////////////
 
     /** Generates a random color */

@@ -12,11 +12,8 @@ import kotlin.math.hypot
 class TouchProcessor(
     context: Context,
     private val maxTouchPoints: Int, // Maximum number of touch points
-    minSpacingMm: Float, // Minimum spacing between touch points in millimeters
-    thresholdMm: Float, // Minimum movement in millimeters to update touch point
-    restoreThresholdMm: Float, // Maximum movement in millimeters to restore lost touches
-    private val logIntervalMs: Int, // Minimum time between logs per touch ID
-    private val restoreGracePeriodMs: Int // Grace period for restoring touches
+    private val patternCheck: PatternCheck,
+    private val patternStorage: PatternStorage,
 ) {
 
     ////////////////// Private properties ///////////////////////////////////////////////////
@@ -29,16 +26,22 @@ class TouchProcessor(
     private val displayMetrics: DisplayMetrics = context.resources.displayMetrics
     private val ppi: Float = displayMetrics.xdpi // Pixels per inch
 
-    private val minSpacing: Float = mmToPixels(minSpacingMm)
-    private val threshold: Float = mmToPixels(thresholdMm)
-    private val restoreThreshold: Float = mmToPixels(restoreThresholdMm)
+    // todo adjust the values
+    private val minSpacing: Float =
+        mmToPixels(5.1f) // Minimum spacing between touch points in millimeters
+    private val threshold: Float =
+        mmToPixels(4.9f) // Minimum movement in millimeters to update touch point
+    private val restoreThreshold: Float =
+        mmToPixels(1f) // Maximum movement in millimeters to restore lost touches
+    private val logIntervalMs: Int = 200 // Minimum time between logs per touch ID
+    private val restoreGracePeriodMs: Int = 100 // Grace period for restoring lost touches
 
     private var lastLoggedMessage: String? = null
 
-    private val patternRecognizer = PatternRecognizer(this, mmToPixels(10f) /*todo adjust*/)
+    val touchSequence = mutableListOf<PointF>()
+    val sequenceTimestamps = mutableListOf<Long>()
     var isRecording = false
     var isChecking = false
-
 
     ////////////////// Public methods ///////////////////////////////////////////////////////
 
@@ -84,7 +87,7 @@ class TouchProcessor(
                             ) && isWellSpaced(newPoint)
                         ) {
                             if (isRecording || isChecking) {
-                                patternRecognizer.addTouchPoint(context, newPoint, currentTime)
+                                addTouchPoint(context, newPoint, currentTime)
                             }
                             touchPoints[pointerId] = newPoint
                             logTouchPoint(pointerId, newPoint)
@@ -109,37 +112,38 @@ class TouchProcessor(
         lostTouches.entries.removeIf { currentTime - it.value.second > restoreGracePeriodMs }
     }
 
-    /** Returns the current touch points map */
-    fun getTouchPoints(): Map<Int, PointF> = touchPoints
+    private fun addTouchPoint(context: Context, point: PointF, timestamp: Long) {
+        Log.d("PatternRecognizer", "Touch point added to sequence: $point")
+        touchSequence.add(point)
+        sequenceTimestamps.add(timestamp)
 
-    fun loadPatternIdCounter(context: Context) {
-        patternRecognizer.loadPatternIdCounter(context)
+        // todo max size limit
+        if (touchSequence.size >= 5) {
+            Log.d("PatternRecognizer", "Touch sequence ending after 5 points.")
+            if (isChecking) {
+                patternCheck.checkPattern()
+            } else if (isRecording) {
+                patternStorage.saveNewPattern(context)
+            }
+        }
     }
 
-    ////////////////// Public pattern recognition methods /////////////////////////////////
+    /** Returns the current touch points map */
+    fun getTouchPoints(): Map<Int, PointF> = touchPoints
 
     fun saveNewPattern() {
         isRecording = true
     }
 
-    fun getCurrentPatterns(): MutableList<PatternData> {
-        return patternRecognizer.getCurrentPatterns()
+    fun resetSequence() {
+        touchSequence.clear()
+        sequenceTimestamps.clear()
     }
 
-    fun saveAllPatternsToFile(context: Context) {
-        patternRecognizer.savePatternsToFile(context)
-    }
-
-    fun loadPatterns(context: Context) {
-        patternRecognizer.loadPatternsFromFile(context)
-    }
-
-    fun deletePatternFromFile(context: Context, patternId: Int) {
-        patternRecognizer.deletePatternFromFile(context, patternId)
-    }
-
-    fun checkPattern() {
-        isChecking = true
+    /** Converts millimeters to pixels */
+    fun mmToPixels(mm: Float): Float {
+        val inches = mm / 25.4f
+        return inches * ppi
     }
 
     ////////////////// Private methods /////////////////////////////////////////////////
@@ -219,11 +223,5 @@ class TouchProcessor(
             }
         }
         return true
-    }
-
-    /** Converts millimeters to pixels */
-    private fun mmToPixels(mm: Float): Float {
-        val inches = mm / 25.4f
-        return inches * ppi
     }
 }

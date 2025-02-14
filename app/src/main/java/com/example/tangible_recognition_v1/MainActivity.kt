@@ -14,15 +14,31 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Create the TouchView
-        val touchView = TouchView(this)
+        val patternCheck = PatternCheck()
+
+        val patternStorage = PatternStorage(patternCheck)
+
+        val touchProcessor = TouchProcessor(
+            context = this,
+            maxTouchPoints = 5,
+            patternCheck = patternCheck,
+            patternStorage = patternStorage
+        )
+
+        // Set dependencies later to avoid circular dependencies
+        patternStorage.setTouchProcessor(touchProcessor)
+        patternCheck.setDependencies(touchProcessor, patternStorage)
+
+        val touchView = TouchView(context = this, touchProcessor = touchProcessor)
 
         // Load saved patterns
-        touchView.loadPatterns(this)
+        patternStorage.loadPatternsFromFile(this)
         // Load saved ID counter on startup todo check if id is the same before saving to file
-        touchView.loadPatternIdCounter(this)
+        patternStorage.loadPatternIdCounter(this)
 
-//        touchView.deletePatternFromFile(this, 2)
+//        for (patternId in 23..28) {
+//            patternStorage.deletePatternFromFile(this, patternId)
+//        }
 
 
         /////////////////////////// Add buttons to the layout ///////////////////////////
@@ -38,7 +54,7 @@ class MainActivity : AppCompatActivity() {
         val saveAllPatternsToFileButton = Button(this).apply {
             text = "Save All Patterns Permanently"
             setOnClickListener {
-                val currentPatterns = touchView.getCurrentPatterns()
+                val currentPatterns = patternStorage.getCurrentPatterns()
 
                 if (currentPatterns.isEmpty()) {
                     Log.d("MainActivity", "No patterns to save!")
@@ -57,7 +73,7 @@ class MainActivity : AppCompatActivity() {
                     .setMessage("Do you want to permanently save these patterns?\nCheck the log for details.")
                     .setPositiveButton("Yes") { _, _ ->
                         // Save patterns permanently
-                        touchView.saveAllPatternsToFile(this@MainActivity)
+                        patternStorage.savePatternsToFile(this@MainActivity)
                         Log.d("MainActivity", "Patterns saved permanently!")
                     }
                     .setNegativeButton("No") { _, _ ->
@@ -70,9 +86,19 @@ class MainActivity : AppCompatActivity() {
         val checkPatternButton = Button(this).apply {
             text = "Check Pattern"
             setOnClickListener {
+                patternStorage.loadPatternsFromFile(this@MainActivity)
                 Log.d("MainActivity", "Checking pattern...")
                 //todo load the patterns again as they may have changed
-                touchView.checkPattern()
+                patternCheck.checkPattern()
+            }
+        }
+
+        // add a button for resetting the current patterns
+        val resetCurrentPatternsButton = Button(this).apply {
+            text = "Reset Current Patterns"
+            setOnClickListener {
+                patternStorage.resetCurrentPatterns()
+                Log.d("MainActivity", "Reset current patterns.")
             }
         }
 
@@ -112,6 +138,14 @@ class MainActivity : AppCompatActivity() {
 
             addView(
                 checkPatternButton,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+
+            addView(
+                resetCurrentPatternsButton,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
