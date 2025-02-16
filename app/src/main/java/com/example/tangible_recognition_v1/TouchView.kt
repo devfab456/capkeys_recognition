@@ -12,6 +12,8 @@ import kotlin.random.Random
 
 class TouchView : View {
 
+    ////////////////// Constructors ///////////////////////////////////////////////////
+
     // Reference to the touch processor
     private lateinit var touchProcessor: TouchProcessor
 
@@ -44,7 +46,7 @@ class TouchView : View {
     /** Processes touch events and assigns a random color to each touch point */
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        touchProcessor.processTouch(event, context) // Process touch events
+        touchProcessor.processTouch(event) // Process touch events
 
         // Assign a random color to each new touch point
         for (i in 0 until event.pointerCount) {
@@ -69,14 +71,9 @@ class TouchView : View {
         }
     }
 
-    ////////////////// Public methods ///////////////////////////////////////////////////////
-
-    fun saveNewPattern() {
-        touchProcessor.saveNewPattern()
-    }
     ////////////////// Private methods //////////////////////////////////////////////////////
 
-    /** Generates a random color */
+    /** Generates a random color for the single touch points */
     private fun getRandomColor(): Int {
         val random = Random.Default
         return Color.rgb(random.nextInt(256), random.nextInt(256), random.nextInt(256))

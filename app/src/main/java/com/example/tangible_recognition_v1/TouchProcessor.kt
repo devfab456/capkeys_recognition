@@ -10,23 +10,34 @@ import kotlin.math.abs
 import kotlin.math.hypot
 
 class TouchProcessor(
-    context: Context,
-    private val maxTouchPoints: Int, // Maximum number of touch points
-    private val patternCheck: PatternCheck,
-    private val patternStorage: PatternStorage,
+    private val context: Context
 ) {
+
+    ////////////////// Initialization ////////////////////////////////////////////////////
+
+    private lateinit var patternCheck: PatternCheck
+    private lateinit var patternStorage: PatternStorage
+
+    fun initialize(patternCheck: PatternCheck, patternStorage: PatternStorage) {
+        this.patternCheck = patternCheck
+        this.patternStorage = patternStorage
+    }
 
     ////////////////// Private properties ///////////////////////////////////////////////////
 
+    // Touch points and logging
     private val touchPoints = mutableMapOf<Int, PointF>() // Stores current touch points
     private val lostTouches =
         mutableMapOf<Int, Pair<PointF, Long>>() // Stores lost touches with timestamps
     private val lastLogTimes = mutableMapOf<Int, Long>() // Stores last log times per touch ID
+    private var lastLoggedMessage: String? = null // Stores the last logged message
 
+    // Display metrics
     private val displayMetrics: DisplayMetrics = context.resources.displayMetrics
     private val ppi: Float = displayMetrics.xdpi // Pixels per inch
 
-    // todo adjust the values
+    // Constants for touch processing todo adjust the values
+    private val maxTouchPoints: Int = 5 // Maximum number of touch points
     private val minSpacing: Float =
         mmToPixels(5.1f) // Minimum spacing between touch points in millimeters
     private val threshold: Float =
@@ -36,8 +47,7 @@ class TouchProcessor(
     private val logIntervalMs: Int = 200 // Minimum time between logs per touch ID
     private val restoreGracePeriodMs: Int = 100 // Grace period for restoring lost touches
 
-    private var lastLoggedMessage: String? = null
-
+    // for pattern recognition
     val touchSequence = mutableListOf<PointF>()
     val sequenceTimestamps = mutableListOf<Long>()
     var isRecording = false
@@ -54,8 +64,8 @@ class TouchProcessor(
      *
      * @param event The MotionEvent containing touch event data.
      */
-    fun processTouch(event: MotionEvent, context: Context) {
-        val currentTime = SystemClock.uptimeMillis()
+    fun processTouch(event: MotionEvent) {
+        val currentTime = SystemClock.elapsedRealtime()
 
         // Process touch events
         when (event.actionMasked) {
@@ -76,7 +86,7 @@ class TouchProcessor(
                         continue // Skip further processing
                     }
 
-                    // Enforce the maximum touch points constraint
+                    // Enforce the maximum touch points constraint todo remove the constraint?
                     if (touchPoints.size < maxTouchPoints || touchPoints.containsKey(pointerId)) {
                         val lastPoint = touchPoints[pointerId]
 
@@ -112,22 +122,6 @@ class TouchProcessor(
         lostTouches.entries.removeIf { currentTime - it.value.second > restoreGracePeriodMs }
     }
 
-    private fun addTouchPoint(context: Context, point: PointF, timestamp: Long) {
-        Log.d("PatternRecognizer", "Touch point added to sequence: $point")
-        touchSequence.add(point)
-        sequenceTimestamps.add(timestamp)
-
-        // todo max size limit
-        if (touchSequence.size >= 5) {
-            Log.d("PatternRecognizer", "Touch sequence ending after 5 points.")
-            if (isChecking) {
-                patternCheck.checkPattern()
-            } else if (isRecording) {
-                patternStorage.saveNewPattern(context)
-            }
-        }
-    }
-
     /** Returns the current touch points map */
     fun getTouchPoints(): Map<Int, PointF> = touchPoints
 
@@ -135,18 +129,49 @@ class TouchProcessor(
         isRecording = true
     }
 
+    fun checkPattern() {
+        isChecking = true
+    }
+
     fun resetSequence() {
         touchSequence.clear()
         sequenceTimestamps.clear()
     }
 
-    /** Converts millimeters to pixels */
     fun mmToPixels(mm: Float): Float {
         val inches = mm / 25.4f
         return inches * ppi
     }
 
     ////////////////// Private methods /////////////////////////////////////////////////
+
+    /**
+     * Adds a touch point to the touch sequence and checks the pattern if the sequence is complete.
+     *
+     * @param context The application context.
+     * @param point The touch point to be added.
+     * @param timestamp The timestamp of the touch point.
+     */
+    private fun addTouchPoint(context: Context, point: PointF, timestamp: Long) {
+        Log.d("PatternRecognizer", "Touch point added to sequence: $point")
+        touchSequence.add(point)
+        sequenceTimestamps.add(timestamp)
+        Log.d(
+            "PatternRecognizer",
+            "Touch sequence: $touchSequence, Timestamps: $sequenceTimestamps"
+        )
+
+        // todo max size limit
+        if (touchSequence.size >= maxTouchPoints) {
+            Log.d("PatternRecognizer", "Touch sequence ending after 5 points.")
+            if (isChecking) {
+                val knownPatterns = patternStorage.getKnownPatterns()
+                patternCheck.checkPattern(knownPatterns)
+            } else if (isRecording) {
+                patternStorage.saveNewPattern(context)
+            }
+        }
+    }
 
     /**
      * Logs the touch point, but only if at least the specified log interval has passed since the last log.

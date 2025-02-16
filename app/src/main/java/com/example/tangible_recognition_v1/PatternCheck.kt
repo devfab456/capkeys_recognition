@@ -8,25 +8,26 @@ import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 
-class PatternCheck {
-    private lateinit var touchProcessor: TouchProcessor
-    private lateinit var patternStorage: PatternStorage
-
-    fun setDependencies(touchProcessor: TouchProcessor, patternStorage: PatternStorage) {
-        this.touchProcessor = touchProcessor
-        this.patternStorage = patternStorage
-    }
+class PatternCheck(
+    private val touchProcessor: TouchProcessor
+) : PatternValidator {
 
     // todo adjust the values
     private val positionTolerance: Float =
-        touchProcessor.mmToPixels(3f) // Tolerance for position matching
-    private val maxTimeBetweenTouchesMs: Long = 2000 // Maximum time between touches
-    private val maxPatternTimeMs: Long = 3000 // Maximum time for a pattern
-    private val maxTimeGap: Long = 1000 // Maximum time gap between touches
+        touchProcessor.mmToPixels(2f) // Tolerance for position matching
+    private val maxTimeBetweenTouchesMs: Long = 3000 // Maximum time between touches
+    private val maxPatternTimeMs: Long = 12000 // Maximum time for a pattern
+    private val maxTimeGap: Long = 500 // Maximum time gap between touches
 
     ////////////////// Public methods ///////////////////////////////////////////////////////
 
-    fun normalizeSequence(): List<PointF> {
+    /**
+     * Normalizes the sequence of touch points by translating the first point to the origin and
+     * rotating the sequence to align the first point with the x-axis.
+     *
+     * @return The normalized sequence of touch points.
+     */
+    override fun normalizeSequence(): List<PointF> {
         if (touchProcessor.touchSequence.isEmpty()) return emptyList()
 
         // Apply position normalization
@@ -38,40 +39,25 @@ class PatternCheck {
         return normalizeRotation(positionNormalized)
     }
 
-    fun checkPattern() {
-        val normalized = normalizeSequence()
-
-        Log.d("PatternRecognizer", "Detected Pattern: $normalized")
-        touchProcessor.resetSequence()
-        touchProcessor.isChecking = false
-
-        for (pattern in patternStorage.knownPatterns) {
-            if (arePatternsEqual(pattern, normalized)) {
-                Log.d(
-                    "PatternRecognizer",
-                    "Recognized Pattern ID: ${pattern.id} - Points: ${pattern.points}}"
-                )
-                return
-            }
-        }
-
-        Log.d("PatternRecognizer", "Pattern NOT recognized!")
-    }
-
-    // todo also time checks when saving the patterns?
-    fun isPatternTimingInvalid(
-        savedPattern: PatternData?,
-        recordNewPattern: Boolean = false
+    /**
+     * Checks if the timing of the touch events
+     *
+     * @param timestamps The list of timestamps for the touch events.
+     * @return True if the timing is invalid, false otherwise.
+     */
+    override fun isPatternTimingInvalidSelf(
+        timestamps: List<Long>
     ): Boolean {
-        if (touchProcessor.sequenceTimestamps.size < 2) return false
+
+        if (timestamps.size < 2) return false
 
         // Check for long pauses between touches
-        for (i in 1 until touchProcessor.sequenceTimestamps.size) {
+        for (i in 1 until timestamps.size) {
             val timeGap =
-                touchProcessor.sequenceTimestamps[i] - touchProcessor.sequenceTimestamps[i - 1]
+                timestamps[i] - timestamps[i - 1]
             if (timeGap > maxTimeBetweenTouchesMs) {
                 Log.d(
-                    "SecurityCheck",
+                    "PatternRecognizer - SecurityCheck",
                     "Touch delay too long at index $i: Delay of $timeGap ms exceeds allowed $maxTimeBetweenTouchesMs ms."
                 )
                 return true
@@ -80,35 +66,86 @@ class PatternCheck {
 
         // Check total duration of pattern
         val totalDuration =
-            touchProcessor.sequenceTimestamps.last() - touchProcessor.sequenceTimestamps.first()
+            timestamps.last() - timestamps.first()
+        Log.d("PatternRecognizer - SecurityCheck", "Total duration of pattern: $totalDuration ms")
         if (totalDuration > maxPatternTimeMs) {
-            Log.d("SecurityCheck", "Pattern rejected: Took too long ($totalDuration ms).")
+            Log.d(
+                "PatternRecognizer - SecurityCheck",
+                "Pattern rejected: Took too long ($totalDuration ms)."
+            )
             return true
         }
 
-        // add a check for the recordNewPattern case
-        if (!recordNewPattern) {
-            if (savedPattern?.timestamps?.size != touchProcessor.sequenceTimestamps.size) return false
+        return false
+    }
 
-            for (i in 1 until savedPattern.timestamps.size) {
-                val expectedTimeGap = savedPattern.timestamps[i] - savedPattern.timestamps[i - 1]
-                val observedTimeGap =
-                    touchProcessor.sequenceTimestamps[i] - touchProcessor.sequenceTimestamps[i - 1]
+    override fun isPatternTimingInvalidCompare(
+        savedPattern: PatternData,
+        timestamps: List<Long>
+    ): Boolean {
 
-                if (abs(observedTimeGap - expectedTimeGap) > maxTimeGap) {
-                    Log.d(
-                        "SecurityCheck",
-                        "Timing mismatch at index $i: Expected $expectedTimeGap ms, but got $observedTimeGap ms."
-                    )
-                    return true
-                }
+        if (savedPattern.timestamps.size != touchProcessor.sequenceTimestamps.size) return false
+
+        for (i in 1 until savedPattern.timestamps.size) {
+            val expectedTimeGap = savedPattern.timestamps[i] - savedPattern.timestamps[i - 1]
+            val observedTimeGap =
+                touchProcessor.sequenceTimestamps[i] - touchProcessor.sequenceTimestamps[i - 1]
+
+            if (abs(observedTimeGap - expectedTimeGap) > maxTimeGap) {
+                Log.d(
+                    "PatternRecognizer - SecurityCheck",
+                    "Timing mismatch in Pattern ${savedPattern.id} at index $i: Expected $expectedTimeGap ms, but got $observedTimeGap ms."
+                )
+                return true
             }
         }
+
         return false
+    }
+
+    /**
+     * Checks the detected pattern against a list of known patterns.
+     *
+     * @param knownPatterns The list of known patterns to be checked against.
+     */
+    fun checkPattern(knownPatterns: List<PatternData>) {
+        val normalized = normalizeSequence()
+        val timestamps = touchProcessor.sequenceTimestamps.toList()
+
+        val detectedPattern = PatternData(-1, normalized, timestamps)
+
+        Log.d("PatternRecognizer - SecurityCheck", "Pattern To Check: $detectedPattern")
+
+        if (isPatternTimingInvalidSelf(timestamps)) {
+            touchProcessor.resetSequence()
+            touchProcessor.isChecking = false
+            return
+        }
+
+        for (pattern in knownPatterns) {
+            if (arePatternsEqual(pattern, detectedPattern)) {
+                Log.d(
+                    "PatternRecognizer - SecurityCheck",
+                    "Recognized Pattern ID: ${pattern.id} - Points: ${pattern.points}}"
+                )
+                return
+            }
+        }
+
+        touchProcessor.resetSequence()
+        touchProcessor.isChecking = false
+
+        Log.d("PatternRecognizer - SecurityCheck", "Pattern NOT recognized!")
     }
 
     ////////////////// Private methods //////////////////////////////////////////////////////
 
+    /**
+     * Normalizes the position of a sequence of points by translating the first point to the centroid.
+     *
+     * @param points The sequence of points to be normalized.
+     * @return The normalized sequence of points.
+     */
     private fun normalizeRotation(points: List<PointF>): List<PointF> {
         if (points.size < 2) return points // Not enough points to determine rotation
 
@@ -122,7 +159,14 @@ class PatternCheck {
         return points.map { rotatePoint(it, -angle, centroid) }
     }
 
-    // Function to rotate a point around a pivot
+    /**
+     * Rotates a point around a pivot by a given angle.
+     *
+     * @param point The point to be rotated.
+     * @param angle The angle of rotation in radians.
+     * @param pivot The pivot point for the rotation.
+     * @return The rotated point.
+     */
     private fun rotatePoint(point: PointF, angle: Double, pivot: PointF): PointF {
         val cosTheta = cos(angle)
         val sinTheta = sin(angle)
@@ -136,13 +180,20 @@ class PatternCheck {
         return PointF(rotatedX.toFloat(), rotatedY.toFloat())
     }
 
+    /**
+     * Compares two patterns to determine if they are equal.
+     *
+     * @param savedPattern The saved pattern to be checked against.
+     * @param patternToBeChecked The pattern to be checked.
+     * @return True if the patterns are equal, false otherwise.
+     */
     private fun arePatternsEqual(
         savedPattern: PatternData,
-        patternToBeChecked: List<PointF>
+        patternToBeChecked: PatternData
     ): Boolean {
         if (!isSizeEqual(savedPattern, patternToBeChecked)) return false
 
-        if (isPatternTimingInvalid(savedPattern)) return false
+        if (isPatternTimingInvalidCompare(savedPattern, patternToBeChecked.timestamps)) return false
 
         for (i in savedPattern.points.indices) {
             if (!isDistanceWithinTolerance(savedPattern, patternToBeChecked, i)) return false
@@ -157,33 +208,50 @@ class PatternCheck {
         return true
     }
 
+    ////////////////// Helper methods ////////////////////////////////////////////////////////
+
+    /**
+     * Checks if the size of the two patterns is equal.
+     *
+     * @param savedPattern The saved pattern to be checked against.
+     * @param patternToBeChecked The pattern to be checked.
+     * @return True if the sizes are equal, false otherwise.
+     */
     private fun isSizeEqual(
         savedPattern: PatternData,
-        patternToBeChecked: List<PointF>
+        patternToBeChecked: PatternData
     ): Boolean {
-        if (savedPattern.points.size != patternToBeChecked.size) {
+        if (savedPattern.points.size != patternToBeChecked.points.size) {
             Log.d(
-                "PatternRecognizer",
-                "Pattern size mismatch: ${savedPattern.points.size} vs ${patternToBeChecked.size}"
+                "PatternRecognizer - SecurityCheck",
+                "Pattern size mismatch: ${savedPattern.points.size} vs ${patternToBeChecked.points.size}"
             )
             return false
         }
         return true
     }
 
+    /**
+     * Checks if the distance between two points is within a given tolerance.
+     *
+     * @param savedPattern The saved pattern to be checked against.
+     * @param patternToBeChecked The pattern to be checked.
+     * @param index The index of the points to be compared.
+     * @return True if the distance is within the tolerance, false otherwise.
+     */
     private fun isDistanceWithinTolerance(
         savedPattern: PatternData,
-        patternToBeChecked: List<PointF>,
+        patternToBeChecked: PatternData,
         index: Int
     ): Boolean {
         val p1 = savedPattern.points[index]
-        val p2 = patternToBeChecked[index]
+        val p2 = patternToBeChecked.points[index]
 
         val distance = hypot((p1.x - p2.x).toDouble(), (p1.y - p2.y).toDouble()).toFloat()
 
         if (distance > positionTolerance) {
             Log.d(
-                "PatternRecognizer",
+                "PatternRecognizer - SecurityCheck",
                 "Pattern mismatch in Pattern ${savedPattern.id} at index $index: Expected ${p1.x},${p1.y} but got ${p2.x},${p2.y}. Distance $distance exceeds tolerance $positionTolerance"
             )
             return false
@@ -191,7 +259,7 @@ class PatternCheck {
 
         if (index != savedPattern.points.indices.first) {
             Log.d(
-                "PatternRecognizer",
+                "PatternRecognizer - SecurityCheck",
                 "Pattern match in Pattern ${savedPattern.id}: Distance $distance is within tolerance $positionTolerance"
             )
         }
@@ -199,15 +267,24 @@ class PatternCheck {
         return true
     }
 
+    /**
+     * Checks if the pairwise distance between two points is within a given tolerance.
+     * The first point is the saved point and the second point is the point to be checked.
+     *
+     * @param savedPattern The saved pattern to be checked against.
+     * @param patternToBeChecked The pattern to be checked.
+     * @param index The index of the points to be compared.
+     * @return True if the pairwise distance is within the tolerance, false otherwise.
+     */
     private fun isPairwiseDistanceWithinTolerance(
         savedPattern: PatternData,
-        patternToBeChecked: List<PointF>,
+        patternToBeChecked: PatternData,
         index: Int
     ): Boolean {
         val p1 = savedPattern.points[index]
-        val p2 = patternToBeChecked[index]
+        val p2 = patternToBeChecked.points[index]
         val prevP1 = savedPattern.points[index - 1]
-        val prevP2 = patternToBeChecked[index - 1]
+        val prevP2 = patternToBeChecked.points[index - 1]
 
         val savedPairDistance =
             hypot((p1.x - prevP1.x).toDouble(), (p1.y - prevP1.y).toDouble()).toFloat()
@@ -218,7 +295,7 @@ class PatternCheck {
 
         if (distanceDiff > positionTolerance) {
             Log.d(
-                "PatternRecognizer",
+                "PatternRecognizer - SecurityCheck",
                 "Pattern mismatch in Pattern ${savedPattern.id} at Index $index: Pairwise distance $checkedPairDistance differs from expected $savedPairDistance"
             )
             return false

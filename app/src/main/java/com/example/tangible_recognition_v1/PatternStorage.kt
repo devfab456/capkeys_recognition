@@ -8,18 +8,20 @@ import com.google.gson.reflect.TypeToken
 import java.io.File
 
 class PatternStorage(
-    private val patternCheck: PatternCheck
+    private val patternValidator: PatternValidator,
+    private val touchProcessor: TouchProcessor
 ) {
-    private lateinit var touchProcessor: TouchProcessor
 
-    fun setTouchProcessor(processor: TouchProcessor) {
-        this.touchProcessor = processor
-    }
-
-    val knownPatterns = mutableListOf<PatternData>()
+    private val knownPatterns = mutableListOf<PatternData>()
     private val currentPatterns = mutableListOf<PatternData>()
 
     private var patternIdCounter = 1 // Start with ID 1, gets overwritten on load
+
+    ////////////////// Public methods ///////////////////////////////////////////////////////
+
+    fun getKnownPatterns(): MutableList<PatternData> {
+        return knownPatterns
+    }
 
     fun getCurrentPatterns(): MutableList<PatternData> {
         return currentPatterns
@@ -29,32 +31,52 @@ class PatternStorage(
         currentPatterns.clear()
     }
 
+    /**
+     * Saves the new pattern to the list of current patterns.
+     *
+     * This method first checks if the new pattern is valid based on the timing of the touch events.
+     * If the pattern is valid, it normalizes the sequence of touch points and saves the pattern
+     * with a new ID to the list of current patterns.
+     */
     fun saveNewPattern(context: Context) {
-        if (patternCheck.isPatternTimingInvalid(null, recordNewPattern = true)) {
+        val normalized = patternValidator.normalizeSequence()
+        val newTimestamps = touchProcessor.sequenceTimestamps.toList()
+
+        if (patternValidator.isPatternTimingInvalidSelf(newTimestamps)) {
             Log.d("PatternRecognizer", "New Pattern rejected due to timing issues.")
             touchProcessor.resetSequence()
             touchProcessor.isRecording = false
             return
         }
-        val normalized = patternCheck.normalizeSequence()
+
         currentPatterns.add(
             PatternData(
                 patternIdCounter++,
                 normalized,
-                touchProcessor.sequenceTimestamps
+                newTimestamps
             )
         )
+
         savePatternIdCounter(context)
         Log.d(
             "PatternRecognizer",
-            "New pattern saved with ID ${patternIdCounter - 1} and Points: $normalized"
+            "New pattern saved with ID ${patternIdCounter - 1} and Points: $normalized and Timestamps: ${touchProcessor.sequenceTimestamps}"
         )
+
         touchProcessor.resetSequence()
         touchProcessor.isRecording = false
         Log.d("PatternRecognizer", "Pattern recording stopped.")
-        Log.d("PatternRecognizer", "Current patterns: $currentPatterns")
+        Log.d("PatternRecognizer", "Current patterns: $currentPatterns \n")
     }
 
+    /**
+     * Saves the current patterns to a file in JSON format.
+     *
+     * This method first loads any existing patterns from the file, then adds the current patterns
+     * to the list, and finally saves the updated list back to the file.
+     *
+     * @param context The context used to access the file system.
+     */
     fun savePatternsToFile(context: Context) {
         val file = File(context.filesDir, "patterns.json")
 
@@ -86,6 +108,14 @@ class PatternStorage(
         Log.d("PatternRecognizer", "Patterns saved: $json")
     }
 
+    /**
+     * Loads patterns from a file in JSON format.
+     *
+     * This method reads the JSON data from the file and parses it into a list of PatternData objects.
+     * If the file does not exist or is empty, it logs a message and returns an empty list.
+     *
+     * @param context The context used to access the file system.
+     */
     fun loadPatternsFromFile(context: Context) {
         val file = File(context.filesDir, "patterns.json")
         if (file.exists()) {
@@ -113,17 +143,30 @@ class PatternStorage(
         }
     }
 
+    /**
+     * Loads the pattern ID counter from shared preferences.
+     *
+     * This method reads the pattern ID counter from shared preferences and assigns it to the
+     * patternIdCounter property. If the counter is not found, it defaults to 1.
+     *
+     * @param context The context used to access shared preferences.
+     */
     fun loadPatternIdCounter(context: Context) {
         val sharedPreferences = context.getSharedPreferences("PatternPrefs", Context.MODE_PRIVATE)
         patternIdCounter =
             sharedPreferences.getInt("patternIdCounter", 1) // Default to 1 if not found
     }
 
-    private fun savePatternIdCounter(context: Context) {
-        val sharedPreferences = context.getSharedPreferences("PatternPrefs", Context.MODE_PRIVATE)
-        sharedPreferences.edit().putInt("patternIdCounter", patternIdCounter).apply()
-    }
-
+    /**
+     * Deletes a pattern from the file based on its ID.
+     *
+     * This method reads the existing patterns from the file, removes the pattern with the specified
+     * ID, and saves the updated list back to the file. If the pattern ID is not found, it logs a
+     * message and does nothing.
+     *
+     * @param context The context used to access the file system.
+     * @param patternId The ID of the pattern to be deleted.
+     */
     fun deletePatternFromFile(context: Context, patternId: Int) {
         val file = File(context.filesDir, "patterns.json")
 
@@ -162,5 +205,20 @@ class PatternStorage(
         } catch (e: Exception) {
             Log.e("PatternRecognizer", "Error deleting pattern: ${e.message}")
         }
+    }
+
+    ////////////////// Private methods //////////////////////////////////////////////////////
+
+    /**
+     * Saves the pattern ID counter to shared preferences.
+     *
+     * This method writes the patternIdCounter property to shared preferences using the key
+     * "patternIdCounter".
+     *
+     * @param context The context used to access shared preferences.
+     */
+    private fun savePatternIdCounter(context: Context) {
+        val sharedPreferences = context.getSharedPreferences("PatternPrefs", Context.MODE_PRIVATE)
+        sharedPreferences.edit().putInt("patternIdCounter", patternIdCounter).apply()
     }
 }

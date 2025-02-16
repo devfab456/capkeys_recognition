@@ -14,43 +14,44 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val patternCheck = PatternCheck()
+        /////////////////////////// Set everything up ///////////////////////////
 
-        val patternStorage = PatternStorage(patternCheck)
+        // Step 1: Create TouchProcessor first (dependencies injected later)
+        val touchProcessor = TouchProcessor(context = this)
 
-        val touchProcessor = TouchProcessor(
-            context = this,
-            maxTouchPoints = 5,
-            patternCheck = patternCheck,
-            patternStorage = patternStorage
-        )
+        // Step 2: Create PatternCheck and PatternStorage, injecting dependencies correctly
+        val patternCheck = PatternCheck(touchProcessor)
+        val patternStorage = PatternStorage(patternCheck, touchProcessor)
 
-        // Set dependencies later to avoid circular dependencies
-        patternStorage.setTouchProcessor(touchProcessor)
-        patternCheck.setDependencies(touchProcessor, patternStorage)
+        // Step 3: Inject dependencies into TouchProcessor
+        touchProcessor.initialize(patternCheck, patternStorage)
 
+        // Step 4: Create TouchView
         val touchView = TouchView(context = this, touchProcessor = touchProcessor)
 
-        // Load saved patterns
+
+        // Load patterns from file on startup
         patternStorage.loadPatternsFromFile(this)
         // Load saved ID counter on startup todo check if id is the same before saving to file
         patternStorage.loadPatternIdCounter(this)
 
-//        for (patternId in 23..28) {
+        // Delete all patterns from file
+//        for (patternId in 78..88) {
 //            patternStorage.deletePatternFromFile(this, patternId)
 //        }
 
-
         /////////////////////////// Add buttons to the layout ///////////////////////////
 
+        // add a button for saving the new pattern
         val saveNewPatternButton = Button(this).apply {
             text = "Save New Pattern"
             setOnClickListener {
                 Log.d("MainActivity", "Saving new pattern...")
-                touchView.saveNewPattern()
+                touchProcessor.saveNewPattern()
             }
         }
 
+        // add a button for saving all patterns to a file
         val saveAllPatternsToFileButton = Button(this).apply {
             text = "Save All Patterns Permanently"
             setOnClickListener {
@@ -63,8 +64,11 @@ class MainActivity : AppCompatActivity() {
 
                 // Log current patterns
                 Log.d("MainActivity", "Review the following patterns before saving:")
-                currentPatterns.forEach { (id, pattern) ->
-                    Log.d("MainActivity", "Pattern ID: $id - Points: $pattern")
+                currentPatterns.forEach { (id, pattern, timestamps) ->
+                    Log.d(
+                        "MainActivity",
+                        "Pattern ID: $id - Points: $pattern - Timestamps: $timestamps"
+                    )
                 }
 
                 // Show confirmation dialog
@@ -83,16 +87,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val checkPatternButton = Button(this).apply {
-            text = "Check Pattern"
-            setOnClickListener {
-                patternStorage.loadPatternsFromFile(this@MainActivity)
-                Log.d("MainActivity", "Checking pattern...")
-                //todo load the patterns again as they may have changed
-                patternCheck.checkPattern()
-            }
-        }
-
         // add a button for resetting the current patterns
         val resetCurrentPatternsButton = Button(this).apply {
             text = "Reset Current Patterns"
@@ -102,6 +96,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // add a button for checking the pattern
+        val checkPatternButton = Button(this).apply {
+            text = "Check Pattern"
+            setOnClickListener {
+                patternStorage.loadPatternsFromFile(this@MainActivity)
+                Log.d("MainActivity", "Checking pattern...")
+                touchProcessor.checkPattern()
+            }
+        }
 
         /////////////////////////// Create the layout ///////////////////////////
 
@@ -137,7 +140,7 @@ class MainActivity : AppCompatActivity() {
             )
 
             addView(
-                checkPatternButton,
+                resetCurrentPatternsButton,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -145,7 +148,7 @@ class MainActivity : AppCompatActivity() {
             )
 
             addView(
-                resetCurrentPatternsButton,
+                checkPatternButton,
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -156,5 +159,4 @@ class MainActivity : AppCompatActivity() {
         // Set the LinearLayout as the content view
         setContentView(layout)
     }
-
 }
