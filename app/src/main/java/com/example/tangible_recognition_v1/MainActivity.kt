@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity() {
         patternStorage.loadPatternIdCounter(this)
 
         // Delete all patterns from file
-//        for (patternId in 78..88) {
+//        for (patternId in 88..91) {
 //            patternStorage.deletePatternFromFile(this, patternId)
 //        }
 

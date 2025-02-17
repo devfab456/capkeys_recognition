@@ -17,7 +17,7 @@ class PatternCheck(
         touchProcessor.mmToPixels(2f) // Tolerance for position matching
     private val maxTimeBetweenTouchesMs: Long = 3000 // Maximum time between touches
     private val maxPatternTimeMs: Long = 12000 // Maximum time for a pattern
-    private val maxTimeGap: Long = 500 // Maximum time gap between touches
+    private val maxTimeGap: Long = 400 // Maximum time gap between touches
 
     ////////////////// Public methods ///////////////////////////////////////////////////////
 
@@ -128,6 +128,8 @@ class PatternCheck(
                     "PatternRecognizer - SecurityCheck",
                     "Recognized Pattern ID: ${pattern.id} - Points: ${pattern.points}}"
                 )
+                touchProcessor.resetSequence()
+                touchProcessor.isChecking = false
                 return
             }
         }
@@ -257,13 +259,10 @@ class PatternCheck(
             return false
         }
 
-        if (index != savedPattern.points.indices.first) {
-            Log.d(
-                "PatternRecognizer - SecurityCheck",
-                "Pattern match in Pattern ${savedPattern.id}: Distance $distance is within tolerance $positionTolerance"
-            )
-        }
-
+        Log.d(
+            "PatternRecognizer - SecurityCheck",
+            "Pattern match in Pattern ${savedPattern.id} at index $index: Distance $distance is within tolerance $positionTolerance"
+        )
         return true
     }
 

@@ -105,6 +105,8 @@ class PatternStorage(
         val json = Gson().toJson(existingPatterns)
         file.writeText(json)
 
+        resetCurrentPatterns()
+
         Log.d("PatternRecognizer", "Patterns saved: $json")
     }
 
