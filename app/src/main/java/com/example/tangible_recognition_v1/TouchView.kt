@@ -67,7 +67,7 @@ class TouchView : View {
             paint.color = touchColors[pointerId] ?: Color.RED
             canvas.drawCircle(point.x, point.y, 100f, paint)
             paint.color = Color.BLACK
-            canvas.drawText("ID: $pointerId", point.x, point.y - 350, paint)
+            canvas.drawText("ID: $pointerId", point.x - 250, point.y - 850, paint)
         }
     }
 

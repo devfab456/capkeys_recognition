@@ -19,54 +19,29 @@ class PatternStorage(
 
     ////////////////// Public methods ///////////////////////////////////////////////////////
 
-    fun getKnownPatterns(): MutableList<PatternData> {
-        return knownPatterns
-    }
-
-    fun getCurrentPatterns(): MutableList<PatternData> {
-        return currentPatterns
-    }
-
-    fun resetCurrentPatterns() {
-        currentPatterns.clear()
-    }
-
-    /**
-     * Saves the new pattern to the list of current patterns.
-     *
-     * This method first checks if the new pattern is valid based on the timing of the touch events.
-     * If the pattern is valid, it normalizes the sequence of touch points and saves the pattern
-     * with a new ID to the list of current patterns.
-     */
     fun saveNewPattern(context: Context) {
-        val normalized = patternValidator.normalizeSequence()
-        val newTimestamps = touchProcessor.sequenceTimestamps.toList()
+        val normalized = patternValidator.normalizeCoordinates()
 
-        if (patternValidator.isPatternTimingInvalidSelf(newTimestamps)) {
+        if (patternValidator.isPatternTimingInvalidSelf(normalized)) {
             Log.d("PatternRecognizer", "New Pattern rejected due to timing issues.")
-            touchProcessor.resetSequence()
-            touchProcessor.isRecording = false
+            touchProcessor.resetGroup()
             return
         }
 
         currentPatterns.add(
             PatternData(
                 patternIdCounter++,
-                normalized,
-                newTimestamps
+                normalized
             )
         )
 
         savePatternIdCounter(context)
         Log.d(
             "PatternRecognizer",
-            "New pattern saved with ID ${patternIdCounter - 1} and Points: $normalized and Timestamps: ${touchProcessor.sequenceTimestamps}"
+            "New pattern saved with ID ${patternIdCounter - 1}"
         )
 
-        touchProcessor.resetSequence()
-        touchProcessor.isRecording = false
-        Log.d("PatternRecognizer", "Pattern recording stopped.")
-        Log.d("PatternRecognizer", "Current patterns: $currentPatterns \n")
+        Log.i("PatternRecognizer", "Current patterns: $currentPatterns")
     }
 
     /**
@@ -94,9 +69,19 @@ class PatternStorage(
             mutableListOf()
         }
 
-        // Convert currentPatterns (Pair<Int, List<PointF>>) to PatternData
-        val newPatterns =
-            currentPatterns.map { (id, points, timestamps) -> PatternData(id, points, timestamps) }
+        // Convert currentPatterns to PatternData
+        val newPatterns = currentPatterns.map { pattern ->
+            PatternData(pattern.id, pattern.groups)
+        }
+
+        // Check if any new pattern ID already exists in the existing patterns
+        val existingIds = existingPatterns.map { it.id }.toSet()
+        val newIds = newPatterns.map { it.id }
+
+        if (newIds.any { it in existingIds }) {
+            Log.d("PatternRecognizer", "New pattern ID already exists. Save operation aborted.")
+            return
+        }
 
         // Add new patterns to the existing list
         existingPatterns.addAll(newPatterns)
@@ -137,26 +122,11 @@ class PatternStorage(
                         "PatternRecognizer",
                         "Patterns loaded successfully: ${knownPatterns.map { it.id }}"
                     )
-//                    Log.d("PatternRecognizer", "Patterns loaded: $knownPatterns")
                 }
             } catch (e: JsonSyntaxException) {
                 Log.e("PatternRecognizer", "Invalid JSON format: ${e.message}")
             }
         }
-    }
-
-    /**
-     * Loads the pattern ID counter from shared preferences.
-     *
-     * This method reads the pattern ID counter from shared preferences and assigns it to the
-     * patternIdCounter property. If the counter is not found, it defaults to 1.
-     *
-     * @param context The context used to access shared preferences.
-     */
-    fun loadPatternIdCounter(context: Context) {
-        val sharedPreferences = context.getSharedPreferences("PatternPrefs", Context.MODE_PRIVATE)
-        patternIdCounter =
-            sharedPreferences.getInt("patternIdCounter", 1) // Default to 1 if not found
     }
 
     /**
@@ -207,6 +177,32 @@ class PatternStorage(
         } catch (e: Exception) {
             Log.e("PatternRecognizer", "Error deleting pattern: ${e.message}")
         }
+    }
+
+    /**
+     * Loads the pattern ID counter from shared preferences.
+     *
+     * This method reads the pattern ID counter from shared preferences and assigns it to the
+     * patternIdCounter property. If the counter is not found, it defaults to 1.
+     *
+     * @param context The context used to access shared preferences.
+     */
+    fun loadPatternIdCounter(context: Context) {
+        val sharedPreferences = context.getSharedPreferences("PatternPrefs", Context.MODE_PRIVATE)
+        patternIdCounter =
+            sharedPreferences.getInt("patternIdCounter", 1) // Default to 1 if not found
+    }
+
+    fun getKnownPatterns(): MutableList<PatternData> {
+        return knownPatterns
+    }
+
+    fun getCurrentPatterns(): MutableList<PatternData> {
+        return currentPatterns
+    }
+
+    fun resetCurrentPatterns() {
+        currentPatterns.clear()
     }
 
     ////////////////// Private methods //////////////////////////////////////////////////////

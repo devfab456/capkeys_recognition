@@ -29,7 +29,7 @@ class TouchProcessor(
     private val touchPoints = mutableMapOf<Int, PointF>() // Stores current touch points
     private val lostTouches =
         mutableMapOf<Int, Pair<PointF, Long>>() // Stores lost touches with timestamps
-    private val lastLogTimes = mutableMapOf<Int, Long>() // Stores last log times per touch ID
+
     private var lastLoggedMessage: String? = null // Stores the last logged message
 
     // Display metrics
@@ -37,21 +37,24 @@ class TouchProcessor(
     private val ppi: Float = displayMetrics.xdpi // Pixels per inch
 
     // Constants for touch processing todo adjust the values
-    private val maxTouchPoints: Int = 5 // Maximum number of touch points
+    private val maxConcurrentTouchPoints: Int =
+        5 // Maximum number of concurrent touch points on iPhone
     private val minSpacing: Float =
         mmToPixels(5.1f) // Minimum spacing between touch points in millimeters
     private val threshold: Float =
         mmToPixels(4.9f) // Minimum movement in millimeters to update touch point
     private val restoreThreshold: Float =
         mmToPixels(1f) // Maximum movement in millimeters to restore lost touches
-    private val logIntervalMs: Int = 200 // Minimum time between logs per touch ID
-    private val restoreGracePeriodMs: Int = 100 // Grace period for restoring lost touches
+    private val restoreGracePeriodMs: Int = 200 // Grace period for restoring lost touches
 
     // for pattern recognition
-    val touchSequence = mutableListOf<PointF>()
-    val sequenceTimestamps = mutableListOf<Long>()
-    var isRecording = false
-    var isChecking = false
+    private var isRecording = false
+    private var isChecking = false
+    private val groupTimeThresholdMs: Long = 200 // Time threshold for grouping touches
+
+    private var currentGroup = mutableListOf<Pair<PointF, Long>>() // Current group being built
+    val patternGroups = mutableListOf<TouchGroup>() // All groups in the current pattern
+
 
     ////////////////// Public methods ///////////////////////////////////////////////////////
 
@@ -81,13 +84,17 @@ class TouchProcessor(
                     if (lostTouch != null && currentTime - lostTouch.second <= restoreGracePeriodMs
                         && !isSignificantChange(lostTouch.first, newPoint, restoreThreshold)
                     ) {
+                        Log.d("TouchProcessor", "Restoring lost touch: $newPoint")
                         touchPoints[pointerId] = lostTouch.first // Restore only if close
                         lostTouches.remove(pointerId) // Remove from lostTouches
                         continue // Skip further processing
                     }
 
-                    // Enforce the maximum touch points constraint todo remove the constraint?
-                    if (touchPoints.size < maxTouchPoints || touchPoints.containsKey(pointerId)) {
+                    // Enforce the maximum concurrent touch points constraint when not yet tracked and update touch points
+                    if (touchPoints.size < maxConcurrentTouchPoints || touchPoints.containsKey(
+                            pointerId
+                        )
+                    ) {
                         val lastPoint = touchPoints[pointerId]
 
                         if (lastPoint == null || isSignificantChange(
@@ -97,7 +104,7 @@ class TouchProcessor(
                             ) && isWellSpaced(newPoint)
                         ) {
                             if (isRecording || isChecking) {
-                                addTouchPoint(context, newPoint, currentTime)
+                                addTouchPoint(newPoint, currentTime)
                             }
                             touchPoints[pointerId] = newPoint
                             logTouchPoint(pointerId, newPoint)
@@ -127,15 +134,37 @@ class TouchProcessor(
 
     fun saveNewPattern() {
         isRecording = true
+        Log.d("PatternRecognizer - Storage", "Recording new pattern...")
+    }
+
+    fun stopSavingPattern() {
+        if (isRecording) {
+            finalizeCurrentGroup()
+            processPattern()
+            isRecording = false
+            Log.d("PatternRecognizer - Storage", "Pattern recording stopped.")
+        }
     }
 
     fun checkPattern() {
         isChecking = true
+        Log.d("PatternRecognizer - Storage", "Checking pattern...")
     }
 
-    fun resetSequence() {
-        touchSequence.clear()
-        sequenceTimestamps.clear()
+    fun stopCheckingPattern() {
+        if (isChecking) {
+            finalizeCurrentGroup()
+            processPattern()
+            isChecking = false
+            Log.d("PatternRecognizer - Storage", "Pattern checking stopped.")
+        }
+    }
+
+    fun resetGroup() {
+        patternGroups.clear()
+        currentGroup.clear()
+        isRecording = false
+        isChecking = false
     }
 
     fun mmToPixels(mm: Float): Float {
@@ -145,31 +174,44 @@ class TouchProcessor(
 
     ////////////////// Private methods /////////////////////////////////////////////////
 
-    /**
-     * Adds a touch point to the touch sequence and checks the pattern if the sequence is complete.
-     *
-     * @param context The application context.
-     * @param point The touch point to be added.
-     * @param timestamp The timestamp of the touch point.
-     */
-    private fun addTouchPoint(context: Context, point: PointF, timestamp: Long) {
+    private fun addTouchPoint(point: PointF, timestamp: Long) {
         Log.d("PatternRecognizer", "Touch point added to sequence: $point")
-        touchSequence.add(point)
-        sequenceTimestamps.add(timestamp)
-        Log.d(
-            "PatternRecognizer",
-            "Touch sequence: $touchSequence, Timestamps: $sequenceTimestamps"
-        )
 
-        // todo max size limit
-        if (touchSequence.size >= maxTouchPoints) {
-            Log.d("PatternRecognizer", "Touch sequence ending after 5 points.")
-            if (isChecking) {
-                val knownPatterns = patternStorage.getKnownPatterns()
-                patternCheck.checkPattern(knownPatterns)
-            } else if (isRecording) {
-                patternStorage.saveNewPattern(context)
+        if (currentGroup.isEmpty()) {
+            // Start a new group
+            currentGroup.add(point to timestamp)
+        } else {
+            val firstTouchInGroup = currentGroup.first().second
+
+            if (timestamp - firstTouchInGroup <= groupTimeThresholdMs) {
+                // Add to current group if within time threshold
+                currentGroup.add(point to timestamp)
+            } else {
+                // Finalize current group and start a new one
+                finalizeCurrentGroup()
+                currentGroup.add(point to timestamp)
             }
+        }
+    }
+
+    private fun finalizeCurrentGroup() {
+        if (currentGroup.isNotEmpty()) {
+            val groupTimestamp =
+                currentGroup.first().second // Use first touch time as group timestamp
+            val groupPoints = currentGroup.map { it.first }
+            patternGroups.add(TouchGroup(groupPoints, groupTimestamp))
+            currentGroup.clear()
+        }
+    }
+
+    private fun processPattern() {
+        if (isChecking) {
+            val knownPatterns = patternStorage.getKnownPatterns()
+            patternCheck.checkPattern(knownPatterns)
+            resetGroup()
+        } else if (isRecording) {
+            patternStorage.saveNewPattern(context)
+            resetGroup()
         }
     }
 
@@ -186,16 +228,10 @@ class TouchProcessor(
         removed: Boolean = false
     ) {
         if (!removed) {
-            val currentTime = SystemClock.uptimeMillis()
-            val lastLogTime = lastLogTimes[pointerId] ?: 0
-
-            if (currentTime - lastLogTime >= logIntervalMs) {
-                Log.d(
-                    "TouchProcessor - ADDED", "New Touch! --- ID: $pointerId " +
-                            "at X: ${point.x}, Y: ${point.y}"
-                )
-                lastLogTimes[pointerId] = currentTime // Update log time
-            }
+            Log.d(
+                "TouchProcessor - ADDED", "New Touch! --- ID: $pointerId " +
+                        "at X: ${point.x}, Y: ${point.y}"
+            )
         } else {
             Log.d(
                 "TouchProcessor - REMOVED",
