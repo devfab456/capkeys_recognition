@@ -12,6 +12,8 @@ class PatternStorage(
     private val touchProcessor: TouchProcessor
 ) {
 
+    ////////////////// Private properties ///////////////////////////////////////////////////
+
     private val knownPatterns = mutableListOf<PatternData>()
     private val currentPatterns = mutableListOf<PatternData>()
 
@@ -23,7 +25,7 @@ class PatternStorage(
         val normalized = patternValidator.normalizeCoordinates()
 
         if (patternValidator.isPatternTimingInvalidSelf(normalized)) {
-            Log.d("PatternRecognizer", "New Pattern rejected due to timing issues.")
+            Log.d("PatternRecognizer - Storage", "New Pattern rejected due to timing issues.")
             touchProcessor.resetGroup()
             return
         }
@@ -37,11 +39,11 @@ class PatternStorage(
 
         savePatternIdCounter(context)
         Log.d(
-            "PatternRecognizer",
+            "PatternRecognizer - Storage",
             "New pattern saved with ID ${patternIdCounter - 1}"
         )
 
-        Log.i("PatternRecognizer", "Current patterns: $currentPatterns")
+        Log.i("PatternRecognizer - Storage", "Current patterns: $currentPatterns")
     }
 
     /**
@@ -62,7 +64,10 @@ class PatternStorage(
                 val type = object : TypeToken<List<PatternData>>() {}.type
                 Gson().fromJson(json, type) ?: mutableListOf()
             } catch (e: Exception) {
-                Log.e("PatternRecognizer", "Error reading existing patterns: ${e.message}")
+                Log.e(
+                    "PatternRecognizer - Storage",
+                    "Error reading existing patterns: ${e.message}"
+                )
                 mutableListOf()
             }
         } else {
@@ -79,7 +84,10 @@ class PatternStorage(
         val newIds = newPatterns.map { it.id }
 
         if (newIds.any { it in existingIds }) {
-            Log.d("PatternRecognizer", "New pattern ID already exists. Save operation aborted.")
+            Log.d(
+                "PatternRecognizer - Storage",
+                "New pattern ID already exists. Save operation aborted."
+            )
             return
         }
 
@@ -92,7 +100,7 @@ class PatternStorage(
 
         resetCurrentPatterns()
 
-        Log.d("PatternRecognizer", "Patterns saved: $json")
+        Log.d("PatternRecognizer - Storage", "Patterns saved: $json")
     }
 
     /**
@@ -116,15 +124,15 @@ class PatternStorage(
                 knownPatterns.addAll(parsedData)
 
                 if (knownPatterns.isEmpty()) {
-                    Log.d("PatternRecognizer", "No patterns loaded. File is empty.")
+                    Log.d("PatternRecognizer - Storage", "No patterns loaded. File is empty.")
                 } else {
                     Log.d(
-                        "PatternRecognizer",
+                        "PatternRecognizer - Storage",
                         "Patterns loaded successfully: ${knownPatterns.map { it.id }}"
                     )
                 }
             } catch (e: JsonSyntaxException) {
-                Log.e("PatternRecognizer", "Invalid JSON format: ${e.message}")
+                Log.e("PatternRecognizer - Storage", "Invalid JSON format: ${e.message}")
             }
         }
     }
@@ -143,7 +151,7 @@ class PatternStorage(
         val file = File(context.filesDir, "patterns.json")
 
         if (!file.exists()) {
-            Log.d("PatternRecognizer", "No file found. Nothing to delete.")
+            Log.d("PatternRecognizer - Storage", "No file found. Nothing to delete.")
             return
         }
 
@@ -153,14 +161,17 @@ class PatternStorage(
             val type = object : TypeToken<List<PatternData>>() {}.type
             val patterns: MutableList<PatternData> = gson.fromJson(json, type) ?: mutableListOf()
 
-            Log.d("PatternRecognizer", "Existing IDs before deletion: ${patterns.map { it.id }}")
+            Log.d(
+                "PatternRecognizer - Storage",
+                "Existing IDs before deletion: ${patterns.map { it.id }}"
+            )
 
             val originalSize = patterns.size
             patterns.removeAll { it.id == patternId }
 
             if (patterns.size == originalSize) {
                 Log.d(
-                    "PatternRecognizer",
+                    "PatternRecognizer - Storage",
                     "Pattern ID $patternId not found. Available IDs: ${patterns.map { it.id }}"
                 )
                 return
@@ -171,11 +182,11 @@ class PatternStorage(
             file.writeText(updatedJson)
 
             Log.d(
-                "PatternRecognizer",
+                "PatternRecognizer - Storage",
                 "Deleted pattern with ID $patternId. File updated. Remaining IDs: ${patterns.map { it.id }}"
             )
         } catch (e: Exception) {
-            Log.e("PatternRecognizer", "Error deleting pattern: ${e.message}")
+            Log.e("PatternRecognizer - Storage", "Error deleting pattern: ${e.message}")
         }
     }
 

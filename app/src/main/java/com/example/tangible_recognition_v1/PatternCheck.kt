@@ -12,14 +12,14 @@ class PatternCheck(
     private val touchProcessor: TouchProcessor
 ) : PatternValidator {
 
-    ////////////////// Constants //////////////////////////////////////////////////////////////
+    ////////////////// Private constants //////////////////////////////////////////////////////////////
 
     // todo adjust the values
-    private val positionTolerance: Float = touchProcessor.mmToPixels(5f)
-    private val maxTimeBetweenGroupsMs: Long = 3000 // Maximum time between groups
-    private val maxPatternTimeMs: Long = 12000 // Maximum time for entire pattern
+    private val positionTolerance: Float = touchProcessor.mmToPixels(4f)
+    private val maxTimeBetweenGroupsMs: Long = 6000 // Maximum time between groups
+    private val maxPatternTimeMs: Long = 20000 // Maximum time for entire pattern
     private val maxTimeGap: Long =
-        400 // Maximum allowed time difference between corresponding groups
+        1000 // Maximum allowed time difference between corresponding groups
 
     ////////////////// Override methods ///////////////////////////////////////////////////////
 
@@ -45,7 +45,6 @@ class PatternCheck(
         // Apply PCA-based rotation normalization
         return normalizeRotation(positionNormalized, centroid)
     }
-
 
     override fun isPatternTimingInvalidSelf(groups: List<TouchGroup>): Boolean {
         if (groups.size < 2) return false
@@ -99,9 +98,7 @@ class PatternCheck(
         return false
     }
 
-
     ////////////////// Public methods ////////////////////////////////////////////////////////
-
 
     fun checkPattern(knownPatterns: List<PatternData>): Boolean {
         val normalized = normalizeCoordinates()
@@ -345,7 +342,6 @@ class PatternCheck(
     private fun calculateAngleBetweenPoints(p1: PointF, p2: PointF): Double {
         return atan2((p2.y - p1.y).toDouble(), (p2.x - p1.x).toDouble())
     }
-
 
     /**
      * Rotates a point around a pivot by a given angle.

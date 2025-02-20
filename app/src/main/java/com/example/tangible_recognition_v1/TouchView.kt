@@ -41,7 +41,7 @@ class TouchView : View {
     }
     private val touchColors = mutableMapOf<Int, Int>()
 
-    ////////////////// Overwritten methods ///////////////////////////////////////////////////////
+    ////////////////// Override methods ///////////////////////////////////////////////////////
 
     /** Processes touch events and assigns a random color to each touch point */
     @SuppressLint("ClickableViewAccessibility")
@@ -65,9 +65,9 @@ class TouchView : View {
         super.onDraw(canvas)
         touchProcessor.getTouchPoints().forEach { (pointerId, point) ->
             paint.color = touchColors[pointerId] ?: Color.RED
-            canvas.drawCircle(point.x, point.y, 100f, paint)
+            canvas.drawCircle(point.x, point.y, 150f, paint)
             paint.color = Color.BLACK
-            canvas.drawText("ID: $pointerId", point.x - 250, point.y - 850, paint)
+            canvas.drawText("ID: $pointerId", point.x, point.y - 750, paint)
         }
     }
 

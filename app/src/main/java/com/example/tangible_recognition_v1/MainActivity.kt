@@ -30,14 +30,12 @@ class MainActivity : AppCompatActivity() {
         // Step 4: Create TouchView
         val touchView = TouchView(context = this, touchProcessor = touchProcessor)
 
-
-        // Load patterns from file on startup
+        // Load patterns from file an ID counter on startup
         patternStorage.loadPatternsFromFile(this)
-        // Load saved ID counter on startup
         patternStorage.loadPatternIdCounter(this)
 
         // Delete all patterns from file
-//        for (patternId in 114..117) {
+//        for (patternId in 121..121) {
 //            patternStorage.deletePatternFromFile(this, patternId)
 //        }
 

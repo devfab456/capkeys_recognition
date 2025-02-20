@@ -6,7 +6,6 @@ import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.MotionEvent
-import kotlin.math.abs
 import kotlin.math.hypot
 
 class TouchProcessor(
@@ -40,21 +39,21 @@ class TouchProcessor(
     private val maxConcurrentTouchPoints: Int =
         5 // Maximum number of concurrent touch points on iPhone
     private val minSpacing: Float =
-        mmToPixels(5.1f) // Minimum spacing between touch points in millimeters
+        mmToPixels(3f) // Minimum spacing between touch points in millimeters
     private val threshold: Float =
-        mmToPixels(4.9f) // Minimum movement in millimeters to update touch point
+        mmToPixels(3f) // Minimum movement in millimeters to update touch point
     private val restoreThreshold: Float =
         mmToPixels(1f) // Maximum movement in millimeters to restore lost touches
-    private val restoreGracePeriodMs: Int = 200 // Grace period for restoring lost touches
+    private val restoreGracePeriodMs: Int = 100 // Grace period for restoring lost touches
+    private val outlierThreshold = mmToPixels(20f) // Example: 10mm tolerance
 
     // for pattern recognition
     private var isRecording = false
     private var isChecking = false
-    private val groupTimeThresholdMs: Long = 200 // Time threshold for grouping touches
 
     private var currentGroup = mutableListOf<Pair<PointF, Long>>() // Current group being built
     val patternGroups = mutableListOf<TouchGroup>() // All groups in the current pattern
-
+    private val groupTimeThresholdMs: Long = 200 // Time threshold for grouping touches
 
     ////////////////// Public methods ///////////////////////////////////////////////////////
 
@@ -133,6 +132,7 @@ class TouchProcessor(
     fun getTouchPoints(): Map<Int, PointF> = touchPoints
 
     fun saveNewPattern() {
+        resetGroup()
         isRecording = true
         Log.d("PatternRecognizer - Storage", "Recording new pattern...")
     }
@@ -147,6 +147,7 @@ class TouchProcessor(
     }
 
     fun checkPattern() {
+        resetGroup()
         isChecking = true
         Log.d("PatternRecognizer - Storage", "Checking pattern...")
     }
@@ -199,7 +200,18 @@ class TouchProcessor(
             val groupTimestamp =
                 currentGroup.first().second // Use first touch time as group timestamp
             val groupPoints = currentGroup.map { it.first }
-            patternGroups.add(TouchGroup(groupPoints, groupTimestamp))
+
+            // Apply outlier filtering
+            val filteredPoints = filterOutliers(groupPoints)
+
+            // Only add the group if it still has points
+            if (filteredPoints.isNotEmpty()) {
+                patternGroups.add(TouchGroup(filteredPoints, groupTimestamp))
+                Log.d("TouchProcessor", "Group finalized with points: $filteredPoints")
+            } else {
+                Log.w("TouchProcessor", "Group discarded due to all points being outliers.")
+            }
+
             currentGroup.clear()
         }
     }
@@ -212,6 +224,28 @@ class TouchProcessor(
         } else if (isRecording) {
             patternStorage.saveNewPattern(context)
             resetGroup()
+        }
+    }
+
+    /**
+     * Filters out touch points that are too far from the centroid.
+     *
+     * @param points The list of touch points.
+     * @return The list of points within the threshold distance.
+     */
+    private fun filterOutliers(points: List<PointF>): List<PointF> {
+        if (points.size <= 2) return points // No need to filter with very few points
+
+        // Calculate centroid
+        val centroidX = points.sumOf { it.x.toDouble() } / points.size
+        val centroidY = points.sumOf { it.y.toDouble() } / points.size
+        val centroid = PointF(centroidX.toFloat(), centroidY.toFloat())
+
+        // Filter points within a threshold distance
+        return points.filter { point ->
+            val distance =
+                hypot((point.x - centroid.x).toDouble(), (point.y - centroid.y).toDouble())
+            distance <= outlierThreshold
         }
     }
 
@@ -262,9 +296,11 @@ class TouchProcessor(
         newPoint: PointF,
         threshold: Float
     ): Boolean {
-        val dx = abs(newPoint.x - lastPoint.x)
-        val dy = abs(newPoint.y - lastPoint.y)
-        return dx > threshold || dy > threshold
+        val distance = hypot(
+            (newPoint.x - lastPoint.x).toDouble(),
+            (newPoint.y - lastPoint.y).toDouble()
+        )
+        return distance > threshold
     }
 
     /**
@@ -280,6 +316,7 @@ class TouchProcessor(
                 (existingPoint.y - newPoint.y).toDouble()
             )
             if (distance < minSpacing) {
+                Log.w("TouchProcessor", "Touch point too close to another touch!")
                 return false // Reject if too close to another touch
             }
         }
