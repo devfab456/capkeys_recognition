@@ -118,7 +118,6 @@ class PatternCheck(
 
         if (isPatternTimingInvalidSelf(timestamps)) {
             touchProcessor.resetSequence()
-            touchProcessor.isChecking = false
             return
         }
 
@@ -129,13 +128,11 @@ class PatternCheck(
                     "Recognized Pattern ID: ${pattern.id} - Points: ${pattern.points}}"
                 )
                 touchProcessor.resetSequence()
-                touchProcessor.isChecking = false
                 return
             }
         }
 
         touchProcessor.resetSequence()
-        touchProcessor.isChecking = false
 
         Log.d("PatternRecognizer - SecurityCheck", "Pattern NOT recognized!")
     }

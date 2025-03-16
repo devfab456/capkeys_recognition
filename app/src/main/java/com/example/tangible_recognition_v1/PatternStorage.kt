@@ -45,7 +45,6 @@ class PatternStorage(
         if (patternValidator.isPatternTimingInvalidSelf(newTimestamps)) {
             Log.d("PatternRecognizer", "New Pattern rejected due to timing issues.")
             touchProcessor.resetSequence()
-            touchProcessor.isRecording = false
             return
         }
 
@@ -64,7 +63,6 @@ class PatternStorage(
         )
 
         touchProcessor.resetSequence()
-        touchProcessor.isRecording = false
         Log.d("PatternRecognizer", "Pattern recording stopped.")
         Log.d("PatternRecognizer", "Current patterns: $currentPatterns \n")
     }

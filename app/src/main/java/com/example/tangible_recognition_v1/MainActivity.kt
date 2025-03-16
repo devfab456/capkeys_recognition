@@ -3,6 +3,7 @@ package com.example.tangible_recognition_v1
 import android.annotation.SuppressLint
 import android.os.Bundle
 import android.util.Log
+import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import androidx.appcompat.app.AlertDialog
@@ -32,7 +33,7 @@ class MainActivity : AppCompatActivity() {
 
         // Load patterns from file on startup
         patternStorage.loadPatternsFromFile(this)
-        // Load saved ID counter on startup todo check if id is the same before saving to file
+        // Load saved ID counter on startup
         patternStorage.loadPatternIdCounter(this)
 
         // Delete all patterns from file
@@ -42,12 +43,27 @@ class MainActivity : AppCompatActivity() {
 
         /////////////////////////// Add buttons to the layout ///////////////////////////
 
+        lateinit var stopSavingPatternButton: Button
+        lateinit var stopCheckingButton: Button
+
         // add a button for saving the new pattern
         val saveNewPatternButton = Button(this).apply {
             text = "Save New Pattern"
             setOnClickListener {
-                Log.d("MainActivity", "Saving new pattern...")
                 touchProcessor.saveNewPattern()
+                visibility = View.GONE // Hide start button
+                stopSavingPatternButton.visibility = View.VISIBLE // Show stop button
+            }
+        }
+
+        // add a button for stopping the recording
+        stopSavingPatternButton = Button(this).apply {
+            text = "Stop Saving Pattern"
+            visibility = View.GONE // initially hidden
+            setOnClickListener {
+                touchProcessor.stopSavingPattern()
+                visibility = View.GONE // Hide stop button
+                saveNewPatternButton.visibility = View.VISIBLE // Show start button
             }
         }
 
@@ -58,15 +74,18 @@ class MainActivity : AppCompatActivity() {
                 val currentPatterns = patternStorage.getCurrentPatterns()
 
                 if (currentPatterns.isEmpty()) {
-                    Log.d("MainActivity", "No patterns to save!")
+                    Log.d("PatternRecognizer - MainActivity", "No patterns to save!")
                     return@setOnClickListener
                 }
 
                 // Log current patterns
-                Log.d("MainActivity", "Review the following patterns before saving:")
+                Log.d(
+                    "PatternRecognizer - MainActivity",
+                    "Review the following patterns before saving:"
+                )
                 currentPatterns.forEach { (id, pattern, timestamps) ->
                     Log.d(
-                        "MainActivity",
+                        "PatternRecognizer - MainActivity",
                         "Pattern ID: $id - Points: $pattern - Timestamps: $timestamps"
                     )
                 }
@@ -78,10 +97,10 @@ class MainActivity : AppCompatActivity() {
                     .setPositiveButton("Yes") { _, _ ->
                         // Save patterns permanently
                         patternStorage.savePatternsToFile(this@MainActivity)
-                        Log.d("MainActivity", "Patterns saved permanently!")
+                        Log.d("PatternRecognizer - MainActivity", "Patterns saved permanently!")
                     }
                     .setNegativeButton("No") { _, _ ->
-                        Log.d("MainActivity", "Pattern save canceled by user.")
+                        Log.d("PatternRecognizer - MainActivity", "Pattern save canceled by user.")
                     }
                     .show()
             }
@@ -92,7 +111,7 @@ class MainActivity : AppCompatActivity() {
             text = "Reset Current Patterns"
             setOnClickListener {
                 patternStorage.resetCurrentPatterns()
-                Log.d("MainActivity", "Reset current patterns.")
+                Log.d("PatternRecognizer - MainActivity", "Reset current patterns.")
             }
         }
 
@@ -101,8 +120,19 @@ class MainActivity : AppCompatActivity() {
             text = "Check Pattern"
             setOnClickListener {
                 patternStorage.loadPatternsFromFile(this@MainActivity)
-                Log.d("MainActivity", "Checking pattern...")
                 touchProcessor.checkPattern()
+                visibility = View.GONE // Hide start button
+                stopCheckingButton.visibility = View.VISIBLE // Show stop button
+            }
+        }
+
+        stopCheckingButton = Button(this).apply {
+            text = "Stop Checking"
+            visibility = View.GONE // Initially hidden
+            setOnClickListener {
+                touchProcessor.stopCheckingPattern()
+                visibility = View.GONE // Hide stop button
+                checkPatternButton.visibility = View.VISIBLE // Show start button again
             }
         }
 
@@ -122,38 +152,12 @@ class MainActivity : AppCompatActivity() {
                 )
             )
 
-            // Add Save Button to the layout
-            addView(
-                saveNewPatternButton,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-            )
-
-            addView(
-                saveAllPatternsToFileButton,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-            )
-
-            addView(
-                resetCurrentPatternsButton,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-            )
-
-            addView(
-                checkPatternButton,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-            )
+            addView(saveNewPatternButton)
+            addView(stopSavingPatternButton)
+            addView(saveAllPatternsToFileButton)
+            addView(resetCurrentPatternsButton)
+            addView(checkPatternButton)
+            addView(stopCheckingButton)
         }
 
         // Set the LinearLayout as the content view

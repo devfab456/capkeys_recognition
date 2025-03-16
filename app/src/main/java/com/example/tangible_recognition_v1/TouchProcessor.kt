@@ -50,8 +50,8 @@ class TouchProcessor(
     // for pattern recognition
     val touchSequence = mutableListOf<PointF>()
     val sequenceTimestamps = mutableListOf<Long>()
-    var isRecording = false
-    var isChecking = false
+    private var isRecording = false
+    private var isChecking = false
 
     ////////////////// Public methods ///////////////////////////////////////////////////////
 
@@ -81,6 +81,7 @@ class TouchProcessor(
                     if (lostTouch != null && currentTime - lostTouch.second <= restoreGracePeriodMs
                         && !isSignificantChange(lostTouch.first, newPoint, restoreThreshold)
                     ) {
+                        Log.d("TouchProcessor", "Restoring lost touch: $newPoint")
                         touchPoints[pointerId] = lostTouch.first // Restore only if close
                         lostTouches.remove(pointerId) // Remove from lostTouches
                         continue // Skip further processing
@@ -97,7 +98,7 @@ class TouchProcessor(
                             ) && isWellSpaced(newPoint)
                         ) {
                             if (isRecording || isChecking) {
-                                addTouchPoint(context, newPoint, currentTime)
+                                addTouchPoint(newPoint, currentTime)
                             }
                             touchPoints[pointerId] = newPoint
                             logTouchPoint(pointerId, newPoint)
@@ -127,15 +128,33 @@ class TouchProcessor(
 
     fun saveNewPattern() {
         isRecording = true
+        Log.d("PatternRecognizer - Storage", "Recording new pattern...")
+    }
+
+    fun stopSavingPattern() {
+        if (isRecording) {
+            processPattern()
+            Log.d("PatternRecognizer - Storage", "Pattern recording stopped.")
+        }
     }
 
     fun checkPattern() {
         isChecking = true
+        Log.d("PatternRecognizer - Storage", "Checking pattern...")
+    }
+
+    fun stopCheckingPattern() {
+        if (isChecking) {
+            processPattern()
+            Log.d("PatternRecognizer - Storage", "Pattern checking stopped.")
+        }
     }
 
     fun resetSequence() {
         touchSequence.clear()
         sequenceTimestamps.clear()
+        isRecording = false
+        isChecking = false
     }
 
     fun mmToPixels(mm: Float): Float {
@@ -148,11 +167,10 @@ class TouchProcessor(
     /**
      * Adds a touch point to the touch sequence and checks the pattern if the sequence is complete.
      *
-     * @param context The application context.
      * @param point The touch point to be added.
      * @param timestamp The timestamp of the touch point.
      */
-    private fun addTouchPoint(context: Context, point: PointF, timestamp: Long) {
+    private fun addTouchPoint(point: PointF, timestamp: Long) {
         Log.d("PatternRecognizer", "Touch point added to sequence: $point")
         touchSequence.add(point)
         sequenceTimestamps.add(timestamp)
@@ -160,16 +178,16 @@ class TouchProcessor(
             "PatternRecognizer",
             "Touch sequence: $touchSequence, Timestamps: $sequenceTimestamps"
         )
+    }
 
-        // todo max size limit
-        if (touchSequence.size >= maxTouchPoints) {
-            Log.d("PatternRecognizer", "Touch sequence ending after 5 points.")
-            if (isChecking) {
-                val knownPatterns = patternStorage.getKnownPatterns()
-                patternCheck.checkPattern(knownPatterns)
-            } else if (isRecording) {
-                patternStorage.saveNewPattern(context)
-            }
+    private fun processPattern() {
+        if (isChecking) {
+            val knownPatterns = patternStorage.getKnownPatterns()
+            patternCheck.checkPattern(knownPatterns)
+            resetSequence()
+        } else if (isRecording) {
+            patternStorage.saveNewPattern(context)
+            resetSequence()
         }
     }
 

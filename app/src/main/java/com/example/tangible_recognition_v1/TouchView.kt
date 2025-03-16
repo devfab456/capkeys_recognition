@@ -37,7 +37,7 @@ class TouchView : View {
     /** Paint object for drawing touch points */
     private val paint = Paint().apply {
         style = Paint.Style.FILL_AND_STROKE
-        textSize = 50f
+        textSize = 70f
     }
     private val touchColors = mutableMapOf<Int, Int>()
 
@@ -65,9 +65,9 @@ class TouchView : View {
         super.onDraw(canvas)
         touchProcessor.getTouchPoints().forEach { (pointerId, point) ->
             paint.color = touchColors[pointerId] ?: Color.RED
-            canvas.drawCircle(point.x, point.y, 100f, paint)
+            canvas.drawCircle(point.x, point.y, 170f, paint)
             paint.color = Color.BLACK
-            canvas.drawText("ID: $pointerId", point.x, point.y - 350, paint)
+            canvas.drawText("ID: $pointerId", point.x, point.y - 600, paint)
         }
     }
 
