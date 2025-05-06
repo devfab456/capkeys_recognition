@@ -2,6 +2,7 @@ package com.example.tangible_recognition_v1
 
 import android.content.Context
 import android.util.Log
+import androidx.core.content.edit
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
@@ -219,6 +220,6 @@ class PatternStorage(
      */
     private fun savePatternIdCounter(context: Context) {
         val sharedPreferences = context.getSharedPreferences("PatternPrefs", Context.MODE_PRIVATE)
-        sharedPreferences.edit().putInt("patternIdCounter", patternIdCounter).apply()
+        sharedPreferences.edit { putInt("patternIdCounter", patternIdCounter) }
     }
 }

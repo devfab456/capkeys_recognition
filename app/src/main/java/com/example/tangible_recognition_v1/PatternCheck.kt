@@ -14,10 +14,15 @@ class PatternCheck(
 
     // todo adjust the values
     private val positionTolerance: Float =
-        touchProcessor.mmToPixels(2f) // Tolerance for position matching
+        touchProcessor.mmToPixels(3f) // Tolerance for position matching
     private val maxTimeBetweenTouchesMs: Long = 3000 // Maximum time between touches
     private val maxPatternTimeMs: Long = 12000 // Maximum time for a pattern
     private val maxTimeGap: Long = 400 // Maximum time gap between touches
+
+    private var failedAttempts = 0
+    private val maxFailedAttempts = 3  // Max failed attempts before lockout
+    private var lockoutTimeMs: Long = 10000  // Lock for 10 seconds after max attempts
+    private var lockoutEndTime: Long = 0  // Time when lockout ends
 
     ////////////////// Public methods ///////////////////////////////////////////////////////
 
@@ -79,6 +84,13 @@ class PatternCheck(
         return false
     }
 
+    /**
+     * Checks if the timing of the saved pattern is invalid compared to the current touch sequence.
+     *
+     * @param savedPattern The saved pattern to be checked against.
+     * @param timestamps The list of timestamps for the touch events.
+     * @return True if the timing is invalid, false otherwise.
+     */
     override fun isPatternTimingInvalidCompare(
         savedPattern: PatternData,
         timestamps: List<Long>
@@ -104,37 +116,94 @@ class PatternCheck(
     }
 
     /**
-     * Checks the detected pattern against a list of known patterns.
-     *
-     * @param knownPatterns The list of known patterns to be checked against.
+     * Checks if the detected pattern matches any stored patterns while enforcing brute-force protection.
      */
-    fun checkPattern(knownPatterns: List<PatternData>) {
+    fun checkPattern(knownPatterns: List<PatternData>): Boolean {
+        // Check if lockout is active
+        if (isLocked()) {
+            val remainingLockTime = getRemainingLockTime()
+            Log.w(
+                "PatternRecognizer - SecurityCheck",
+                "Pattern check blocked! Locked for another ${remainingLockTime}ms."
+            )
+            return false
+        }
+
         val normalized = normalizeSequence()
         val timestamps = touchProcessor.sequenceTimestamps.toList()
-
         val detectedPattern = PatternData(-1, normalized, timestamps)
 
         Log.d("PatternRecognizer - SecurityCheck", "Pattern To Check: $detectedPattern")
 
         if (isPatternTimingInvalidSelf(timestamps)) {
+            handleFailedAttempt()
             touchProcessor.resetSequence()
-            return
+            return false
         }
 
         for (pattern in knownPatterns) {
             if (arePatternsEqual(pattern, detectedPattern)) {
                 Log.d(
                     "PatternRecognizer - SecurityCheck",
-                    "Recognized Pattern ID: ${pattern.id} - Points: ${pattern.points}}"
+                    "Recognized Pattern ID: ${pattern.id}"
                 )
+                resetFailedAttempts()
                 touchProcessor.resetSequence()
-                return
+                return true  // Pattern recognized
             }
         }
 
+        handleFailedAttempt()
         touchProcessor.resetSequence()
 
-        Log.d("PatternRecognizer - SecurityCheck", "Pattern NOT recognized!")
+        Log.w("PatternRecognizer - SecurityCheck", "Pattern NOT recognized!")
+        return false  // Pattern not recognized
+    }
+
+
+    ////////////////// Brute-Force Protection ///////////////////////////////////////////////////
+
+    /**
+     * Handles a failed authentication attempt by incrementing the counter
+     * and applying a lockout if necessary.
+     */
+    private fun handleFailedAttempt() {
+        failedAttempts++
+        Log.w(
+            "PatternRecognizer - SecurityCheck",
+            "Failed attempt $failedAttempts/$maxFailedAttempts"
+        )
+
+        if (failedAttempts >= maxFailedAttempts) {
+            lockoutEndTime = System.currentTimeMillis() + lockoutTimeMs
+            Log.w(
+                "PatternRecognizer - SecurityCheck",
+                "Too many failed attempts! Locking for ${lockoutTimeMs / 1000} seconds."
+            )
+        }
+    }
+
+    /**
+     * Resets the failed attempt counter after a successful authentication.
+     */
+    private fun resetFailedAttempts() {
+        failedAttempts = 0
+        lockoutEndTime = 0
+        Log.d("PatternRecognizer - SecurityCheck", "Failed attempts reset after success.")
+    }
+
+    /**
+     * Checks if the system is currently locked due to excessive failed attempts.
+     */
+    fun isLocked(): Boolean {
+        return System.currentTimeMillis() < lockoutEndTime
+    }
+
+    /**
+     * Returns the remaining lockout time in milliseconds.
+     */
+    fun getRemainingLockTime(): Long {
+        return maxOf(0, lockoutEndTime - System.currentTimeMillis())
     }
 
     ////////////////// Private methods //////////////////////////////////////////////////////

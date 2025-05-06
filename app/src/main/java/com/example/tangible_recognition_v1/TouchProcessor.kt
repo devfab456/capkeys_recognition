@@ -6,7 +6,6 @@ import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.MotionEvent
-import kotlin.math.abs
 import kotlin.math.hypot
 
 class TouchProcessor(
@@ -182,8 +181,24 @@ class TouchProcessor(
 
     private fun processPattern() {
         if (isChecking) {
+            // Check lockout state before checking patterns
+            if (patternCheck.isLocked()) {
+                val remainingTime = patternCheck.getRemainingLockTime()
+                Log.w(
+                    "PatternRecognizer - SecurityCheck",
+                    "Cannot check pattern. Locked for another ${remainingTime}ms."
+                )
+                resetSequence()
+                return
+            }
+
             val knownPatterns = patternStorage.getKnownPatterns()
-            patternCheck.checkPattern(knownPatterns)
+            val recognized = patternCheck.checkPattern(knownPatterns)
+
+            if (!recognized) {
+                Log.w("PatternRecognizer", "Pattern check failed!")
+            }
+
             resetSequence()
         } else if (isRecording) {
             patternStorage.saveNewPattern(context)
@@ -244,10 +259,13 @@ class TouchProcessor(
         newPoint: PointF,
         threshold: Float
     ): Boolean {
-        val dx = abs(newPoint.x - lastPoint.x)
-        val dy = abs(newPoint.y - lastPoint.y)
-        return dx > threshold || dy > threshold
+        val distance = hypot(
+            (newPoint.x - lastPoint.x).toDouble(),
+            (newPoint.y - lastPoint.y).toDouble()
+        )
+        return distance > threshold
     }
+
 
     /**
      * Checks if the new touch point is well spaced from existing touch points.
