@@ -18,5 +18,5 @@ This repository contains the Android-based recognition system developed as part 
 
 - Android Studio (API level 21+)
 - Kotlin
-- A touchscreen device
+- An Android touchscreen device
 
